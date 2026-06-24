@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>공공 오픈 API 연동형 전시 스케줄러 MVP</title>
+  <meta name="description" content="전국 공공 미술관 및 문화시설의 무료, 할인 전시 정보와 문화가 있는 날 혜택을 한눈에 확인하고, 내 주말 캘린더에 담아 간편하게 관리하세요.">
+  <link rel="stylesheet" href="css/style.css">
+  
+  <!-- Fallback script defining default empty configuration if js/config.js is missing -->
+  <script>
+    window.CultureCurationConfig = {
+      tourApiKey: '',
+      cultureApiKey: '',
+      defaultEndpointType: 'tour',
+      debug: false
+    };
+  </script>
+  <!-- Load developers config locally -->
+  <script src="js/config.js" onerror="console.info('js/config.js 파일이 없어 UI 입력 및 브라우저 localStorage를 대신 사용합니다.')"></script>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="header-container">
+      <div class="logo-section">
+        <h1>
+          <span style="font-size: 1.75rem;">🎨</span> Culture Curation
+        </h1>
+        <p>이번 달 무료·할인 전시를 한 번에 보고, 내 주말 캘린더에 저장하세요.</p>
+      </div>
+      
+      <!-- Settings Panel Trigger Button -->
+      <div class="settings-section">
+        <button id="settings-toggle-btn" class="api-key-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings-modal" style="display: flex; align-items: center; gap: 0.35rem;">
+          ⚙️ API 설정
+        </button>
+      </div>
+    </div>
+    
+    <!-- API Load Status Warning/Success Banner -->
+    <div id="status-banner" class="status-banner fallback" role="alert">
+      <span id="status-banner-text">실시간 데이터를 불러오지 못해 예시 데이터를 표시합니다. API Key를 입력하거나 잠시 후 다시 시도해 주세요.</span>
+      <button id="status-banner-close" class="status-banner-close" aria-label="배너 닫기">&times;</button>
+    </div>
+  </header>
+
+  <!-- Mobile-only Filter Chips Row -->
+  <div class="mobile-chips-wrapper" id="mobile-chips-container">
+    <button class="chip-btn active" data-filter="all" id="mobile-chip-all">전국 전시</button>
+    <button class="chip-btn" data-filter="free" id="mobile-chip-free">무료만</button>
+    <button class="chip-btn" data-filter="culture" id="mobile-chip-culture">문화가있는날</button>
+    <button class="chip-btn" data-filter="weekend" id="mobile-chip-weekend">이번 주말</button>
+  </div>
+
+  <!-- Mobile Toggle Button for Map -->
+  <div style="padding: 0 1rem; margin-top: 1rem;">
+    <button class="mobile-map-toggle-btn" id="mobile-map-toggle" aria-expanded="false" aria-controls="map-sidebar-card">
+      🗺️ <span>전국 지역 격자 지도 보기</span>
+    </button>
+  </div>
+
+  <!-- Main Container -->
+  <main>
+    <!-- Left Sidebar: Map & Filter Controls -->
+    <aside class="sidebar" id="sidebar-panel">
+      <!-- 1. Region SVG Grid Map (Collapsible on Mobile) -->
+      <section class="sidebar-card" id="map-sidebar-card">
+        <h2>전국 지역 격자 지도</h2>
+        <p style="font-size: 0.8rem; color: var(--color-muted); margin-bottom: 0.75rem;">원하는 지역을 클릭하여 해당 지역의 전시만 모아보세요.</p>
+        <div class="map-wrapper" id="map-container">
+          <!-- Dynamically populated SVG Map goes here -->
+        </div>
+        <button id="reset-region-btn" class="card-btn secondary" style="width: 100%; margin-top: 0.75rem; min-height: 38px;">전국 지역 선택 해제</button>
+      </section>
+
+      <!-- 2. Search & Detailed Filters Checkbox (Always Visible on Mobile) -->
+      <section class="sidebar-card" id="filters-sidebar-card">
+        <h2>전시 필터링</h2>
+        
+        <!-- Search -->
+        <div class="search-container">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="exhibition-search" class="search-input" placeholder="전시명, 미술관, 지역 검색..." aria-label="전시 검색어 입력">
+        </div>
+
+        <!-- Filter Checkboxes -->
+        <div class="filters-list">
+          <label class="filter-checkbox-label">
+            <input type="checkbox" id="filter-free-only">
+            <span>🟢 무료 전시만 보기</span>
+          </label>
+          <label class="filter-checkbox-label">
+            <input type="checkbox" id="filter-culture-day">
+            <span>🎉 문화가 있는 날 혜택만 보기</span>
+          </label>
+          <label class="filter-checkbox-label">
+            <input type="checkbox" id="filter-weekend">
+            <span>📅 이번 주말 전시만 보기</span>
+          </label>
+          <label class="filter-checkbox-label">
+            <input type="checkbox" id="filter-month" checked>
+            <span>🗓️ 이번 달 진행 중인 전시</span>
+          </label>
+          <label class="filter-checkbox-label">
+            <input type="checkbox" id="filter-ongoing" checked>
+            <span>⚡ 현재 진행 중인 전시만</span>
+          </label>
+        </div>
+      </section>
+    </aside>
+
+    <!-- Right Content: Exhibition Card List Grid -->
+    <section class="content-area">
+      <!-- Toolbar: Selected Region Info & Sorting -->
+      <div class="toolbar">
+        <div class="toolbar-title-section">
+          <h2 id="current-region-display">전국 전시</h2>
+          <span class="toolbar-stats" id="toolbar-stats-text">불러오는 중...</span>
+        </div>
+        
+        <!-- Sorting -->
+        <div class="sort-container">
+          <label for="exhibition-sort" style="font-size: 0.85rem; font-weight: 600; color: var(--color-text-muted);">정렬</label>
+          <select id="exhibition-sort" class="sort-select">
+            <option value="endingSoon">종료 임박순</option>
+            <option value="freeFirst">무료 우선</option>
+            <option value="cultureDayFirst">문화가 있는 날 우선</option>
+            <option value="region">지역순</option>
+            <option value="venue">기관명순</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Main Cards Grid List -->
+      <div class="cards-grid" id="cards-grid">
+        <!-- Dynamically rendering cards -->
+        <div class="empty-state">
+          <div class="empty-state-icon">🔄</div>
+          <h3>데이터를 불러오는 중입니다.</h3>
+          <p>공공 데이터를 실시간으로 가져오고 있습니다. 잠시만 기다려 주세요.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Floating Action Button for My Calendar -->
+  <button id="calendar-fab" class="calendar-fab" aria-label="내 주말 캘린더 열기" aria-haspopup="dialog">
+    📅 내 주말 캘린더
+    <span id="calendar-fab-badge" class="calendar-fab-badge">0</span>
+  </button>
+
+  <!-- Sliding Drawer Calendar Overlay Backdrop -->
+  <div id="drawer-backdrop" class="drawer-backdrop"></div>
+
+  <!-- Sliding Drawer for Calendar -->
+  <div id="calendar-drawer" class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+    <div class="drawer-header">
+      <h2 id="drawer-title">내 주말 캘린더</h2>
+      <button id="drawer-close" class="drawer-close-btn" aria-label="캘린더 닫기">&times;</button>
+    </div>
+
+    <div class="drawer-content">
+      <!-- 1. Stats and Total Cost Estimations -->
+      <div class="stats-box">
+        <div class="stats-grid">
+          <div class="stat-item">
+            <span class="stat-label">이번 주말 가고 싶은 곳</span>
+            <span class="stat-value highlight" id="weekend-visit-count">0개</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">저장된 무료 전시</span>
+            <span class="stat-value green" id="saved-free-count">0개</span>
+          </div>
+          <div class="stat-item" style="grid-column: 1 / -1; margin-top: 0.5rem; border-top: 1px solid var(--color-border); padding-top: 0.5rem;">
+            <span class="stat-label">예상 총 비용</span>
+            <span class="stat-value" id="estimated-total-cost" style="font-size: 1.25rem;">0원</span>
+          </div>
+        </div>
+        <div class="stats-disclaimer">
+          ※ 할인 및 상세 금액 미기입 전시는 제외된 금액입니다. 문화가 있는 날 할인 혜택 등 개별 방문 전 기관 공식 안내 확인이 필요합니다.
+        </div>
+      </div>
+
+      <!-- 2. Upcoming Weekend Visits Section -->
+      <div>
+        <div class="saved-section-title">
+          <span>이번 주말 방문 후보</span>
+          <span class="count-badge" id="weekend-section-count">0개</span>
+        </div>
+        <div class="saved-list" id="weekend-saved-list">
+          <!-- Dynamic weekend list items -->
+          <p style="font-size: 0.875rem; color: var(--color-muted); text-align: center; padding: 1rem 0;">이번 주말에 진행되는 저장된 전시가 없습니다.</p>
+        </div>
+      </div>
+
+      <!-- 3. All Saved Exhibitions Section -->
+      <div>
+        <div class="saved-section-title">
+          <span>전체 저장 목록</span>
+          <span class="count-badge" id="all-section-count">0개</span>
+        </div>
+        <div class="saved-list" id="all-saved-list">
+          <!-- Dynamic saved items -->
+          <p style="font-size: 0.875rem; color: var(--color-muted); text-align: center; padding: 1rem 0;">저장된 전시가 없습니다. 마음에 드는 전시를 저장해 보세요!</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Drawer Footer Actions -->
+    <div class="drawer-footer">
+      <button id="clear-all-saved" class="drawer-clear-btn">비우기</button>
+    </div>
+  </div>
+
+  <!-- API Multiple Keys Settings Modal Backdrop -->
+  <div id="settings-backdrop" class="drawer-backdrop"></div>
+
+  <!-- API Multiple Keys Settings Drawer/Modal -->
+  <div id="settings-modal" class="drawer" role="dialog" aria-modal="true" aria-labelledby="settings-title" style="max-width: 460px; right: -460px;">
+    <div class="drawer-header">
+      <h2 id="settings-title">⚙️ API 연동 및 보안 설정</h2>
+      <button id="settings-close" class="drawer-close-btn" aria-label="설정 닫기">&times;</button>
+    </div>
+
+    <div class="drawer-content">
+      <!-- Info box -->
+      <div class="stats-box" style="background-color: var(--color-primary-light); border-color: rgba(37, 99, 235, 0.15); margin-bottom: 0.5rem;">
+        <p style="font-size: 0.825rem; color: var(--color-primary-dark); font-weight: 500; line-height: 1.5;">
+          💡 <strong>API 인증 안내</strong>: 공공데이터포털에서 발급받은 서비스키를 아래 입력하십시오. 로컬 저장소(localStorage)에 안전하게 보관됩니다.
+        </p>
+      </div>
+
+      <!-- Settings Inputs -->
+      <div class="filters-list" style="gap: 1.25rem;">
+        <div style="display: flex; flex-direction: column; gap: 0.35rem;">
+          <label for="settings-tour-key" style="font-size: 0.85rem; font-weight: 700; color: var(--color-text-muted);">
+            1. 한국관광공사 (KTO) API Key
+          </label>
+          <input type="password" id="settings-tour-key" class="search-input" placeholder="관광공사 일반 인증키 입력" style="background-color: #ffffff;">
+          <span id="tour-key-source-info" style="font-size: 0.75rem; color: var(--color-muted); font-weight: 500;"></span>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 0.35rem;">
+          <label for="settings-culture-key" style="font-size: 0.85rem; font-weight: 700; color: var(--color-text-muted);">
+            2. 한국문화정보원 (KCISA) API Key
+          </label>
+          <input type="password" id="settings-culture-key" class="search-input" placeholder="문화포털 일반 인증키 입력" style="background-color: #ffffff;">
+          <span id="culture-key-source-info" style="font-size: 0.75rem; color: var(--color-muted); font-weight: 500;"></span>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 0.35rem;">
+          <label for="settings-endpoint-type" style="font-size: 0.85rem; font-weight: 700; color: var(--color-text-muted);">
+            3. 사용할 우선순위 API 선택
+          </label>
+          <select id="settings-endpoint-type" class="sort-select" style="width: 100%; background-color: #ffffff; padding-right: 2rem;">
+            <option value="tour">한국관광공사 국문 관광정보 (추천)</option>
+            <option value="culture">한국문화정보원 문화체험정보</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Security advice -->
+      <div class="stats-box" style="margin-top: auto; font-size: 0.775rem; color: var(--color-text-muted); line-height: 1.5; border-style: dashed;">
+        🛡️ <strong>보안 강화 권장사항</strong>:<br>
+        배포/운영 시 소스코드에 API 키가 노출되지 않도록 프로젝트 루트 폴더에 <code>js/config.js</code> 파일을 생성하여 키를 정의하십시오. (README 참고) 이 파일은 git 추적 대상에서 제외되므로 코드를 GitHub에 업로드해도 안전합니다.
+      </div>
+    </div>
+
+    <!-- Modal actions -->
+    <div class="drawer-footer">
+      <button id="settings-save" class="card-btn primary" style="width: 100%; min-height: 44px;">저장 및 연동 시도</button>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="js/storage.js"></script>
+  <script src="js/filters.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
