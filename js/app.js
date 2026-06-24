@@ -73,13 +73,35 @@ const elements = {
   mobileChipsContainer: document.getElementById('mobile-chips-container'),
   mobileMapToggle: document.getElementById('mobile-map-toggle'),
   mapSidebarCard: document.getElementById('map-sidebar-card'),
-  sidebarPanel: document.getElementById('sidebar-panel')
+  sidebarPanel: document.getElementById('sidebar-panel'),
+
+  // Theme Toggle Button
+  themeToggleBtn: document.getElementById('theme-toggle-btn'),
+
+  // Exhibition Details Modal
+  detailsBackdrop: document.getElementById('details-backdrop'),
+  detailsModal: document.getElementById('details-modal'),
+  modalCloseBtn: document.getElementById('modal-close'),
+  modalBadgeContainer: document.getElementById('modal-badge-container'),
+  modalExhibitionTitle: document.getElementById('modal-exhibition-title'),
+  modalVenueDisplay: document.getElementById('modal-venue-display'),
+  modalAddressDisplay: document.getElementById('modal-address-display'),
+  modalDateDisplay: document.getElementById('modal-date-display'),
+  modalPriceDisplay: document.getElementById('modal-price-display'),
+  modalDescDisplay: document.getElementById('modal-desc-display'),
+  modalSourceName: document.getElementById('modal-source-name'),
+  modalUpdatedDate: document.getElementById('modal-updated-date'),
+  modalToggleSaveBtn: document.getElementById('modal-toggle-save'),
+  modalViewSourceBtn: document.getElementById('modal-view-source')
 };
 
 // -------------------------------------------------------------
 // Initialization
 // -------------------------------------------------------------
 document.addEventListener('DOMContentLoaded', () => {
+  // 0. Load theme from localStorage
+  initTheme();
+
   // 1. Load configuration metadata to UI
   syncSettingsFromConfig();
 
@@ -267,11 +289,39 @@ function setupEventListeners() {
     loadData();
   });
 
+  // Theme Toggle Controls
+  if (elements.themeToggleBtn) {
+    elements.themeToggleBtn.addEventListener('click', toggleTheme);
+  }
+
+  // Exhibition Details Modal Controls
+  if (elements.modalCloseBtn) {
+    elements.modalCloseBtn.addEventListener('click', closeDetailsModal);
+  }
+  if (elements.detailsBackdrop) {
+    elements.detailsBackdrop.addEventListener('click', closeDetailsModal);
+  }
+  if (elements.modalToggleSaveBtn) {
+    elements.modalToggleSaveBtn.addEventListener('click', () => {
+      if (activeModalExhibitionId) {
+        toggleSaveExhibition(activeModalExhibitionId);
+      }
+    });
+  }
+  if (elements.modalViewSourceBtn) {
+    elements.modalViewSourceBtn.addEventListener('click', () => {
+      if (activeModalExhibitionId) {
+        viewExhibitionSource(activeModalExhibitionId);
+      }
+    });
+  }
+
   // ESC Close for Drawer Modals
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       closeCalendarDrawer();
       closeSettingsModal();
+      closeDetailsModal();
     }
   });
 
@@ -435,8 +485,8 @@ function renderExhibitions() {
         <button class="card-btn ${isSaved ? 'saved' : 'primary'}" onclick="toggleSaveExhibition('${ex.id}')" aria-label="${escapeHtml(ex.title)} ${isSaved ? '캘린더에서 해제' : '캘린더에 저장'}">
           ${isSaved ? '❤️ 저장 해제' : '💙 내 캘린더 저장'}
         </button>
-        <button class="card-btn secondary" onclick="viewExhibitionSource('${ex.id}')" aria-label="${escapeHtml(ex.title)} 출처 상세 보기">
-          출처 보기
+        <button class="card-btn secondary" onclick="showExhibitionDetails('${ex.id}')" aria-label="${escapeHtml(ex.title)} 상세 보기">
+          상세 보기
         </button>
       </div>
       
@@ -472,6 +522,7 @@ window.toggleSaveExhibition = function(id) {
   updateCalendarFabBadge();
   renderExhibitions();
   renderDrawerContent();
+  updateModalSaveButtonState();
 };
 
 window.viewExhibitionSource = function(id) {
@@ -649,4 +700,103 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+// -------------------------------------------------------------
+// Theme Management Helpers
+// -------------------------------------------------------------
+function initTheme() {
+  const savedTheme = localStorage.getItem('culture_curator_theme') || 'light';
+  document.documentElement.setAttribute('data-theme', savedTheme);
+  updateThemeToggleBtn(savedTheme);
+}
+
+function updateThemeToggleBtn(theme) {
+  if (elements.themeToggleBtn) {
+    elements.themeToggleBtn.textContent = theme === 'dark' ? '🌙' : '☀️';
+    elements.themeToggleBtn.setAttribute('aria-label', theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환');
+  }
+}
+
+function toggleTheme() {
+  const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+  const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', newTheme);
+  localStorage.setItem('culture_curator_theme', newTheme);
+  updateThemeToggleBtn(newTheme);
+  showTemporaryFloatingNotice(newTheme === 'dark' ? '다크 모드로 전환되었습니다.' : '라이트 모드로 전환되었습니다.');
+}
+
+// -------------------------------------------------------------
+// Exhibition Details Modal Helpers
+// -------------------------------------------------------------
+let activeModalExhibitionId = null;
+
+function openDetailsModal() {
+  elements.detailsBackdrop.classList.add('open');
+  elements.detailsModal.classList.add('open');
+  elements.modalCloseBtn.focus();
+}
+
+function closeDetailsModal() {
+  elements.detailsBackdrop.classList.remove('open');
+  elements.detailsModal.classList.remove('open');
+  activeModalExhibitionId = null;
+}
+
+window.showExhibitionDetails = function(id) {
+  const target = state.exhibitions.find(item => item.id === id);
+  if (!target) return;
+
+  activeModalExhibitionId = id;
+
+  // 1. Populate Badges
+  elements.modalBadgeContainer.innerHTML = '';
+  let badgeHtml = '';
+  if (target.priceType === 'free') {
+    badgeHtml += `<span class="badge free">무료</span>`;
+  } else if (target.priceType === 'discount') {
+    badgeHtml += `<span class="badge discount">할인</span>`;
+  } else if (target.priceType === 'paid') {
+    badgeHtml += `<span class="badge paid">유료</span>`;
+  } else {
+    badgeHtml += `<span class="badge unknown">정보없음</span>`;
+  }
+  
+  if (target.isCultureDay) {
+    badgeHtml += `<span class="badge culture-day">🎉 문화가있는날</span>`;
+  }
+  elements.modalBadgeContainer.innerHTML = badgeHtml;
+
+  // 2. Populate Text & Info
+  elements.modalExhibitionTitle.textContent = target.title;
+  elements.modalVenueDisplay.textContent = `${target.venue} (${target.region || ''} ${target.district || ''})`;
+  elements.modalAddressDisplay.textContent = target.address || '상세 주소 정보 없음';
+  elements.modalDateDisplay.textContent = `${target.startDate} ~ ${target.endDate}`;
+  
+  const displayPriceText = target.priceText || (target.priceType === 'free' ? '무료' : '금액 미상');
+  elements.modalPriceDisplay.textContent = displayPriceText;
+  elements.modalDescDisplay.textContent = target.description || '상세 설명 정보가 등록되어 있지 않습니다.';
+  
+  elements.modalSourceName.textContent = `출처: ${target.sourceName || '공공데이터포털'}`;
+  elements.modalUpdatedDate.textContent = `기준일: ${target.lastUpdated || '2026-06-22'}`;
+
+  // 3. Update Save Button Visual
+  updateModalSaveButtonState();
+
+  // 4. Show Modal
+  openDetailsModal();
+};
+
+function updateModalSaveButtonState() {
+  if (!activeModalExhibitionId || !elements.modalToggleSaveBtn) return;
+  const isSaved = state.savedExhibitions.some(item => item.id === activeModalExhibitionId);
+  
+  if (isSaved) {
+    elements.modalToggleSaveBtn.className = 'modal-btn primary saved';
+    elements.modalToggleSaveBtn.textContent = '❤️ 저장 해제';
+  } else {
+    elements.modalToggleSaveBtn.className = 'modal-btn primary';
+    elements.modalToggleSaveBtn.textContent = '💙 내 캘린더 저장';
+  }
 }

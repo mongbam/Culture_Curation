@@ -31,8 +31,11 @@
         <p>이번 달 무료·할인 전시를 한 번에 보고, 내 주말 캘린더에 저장하세요.</p>
       </div>
       
-      <!-- Settings Panel Trigger Button -->
+      <!-- Settings Panel Trigger Button & Theme Toggle -->
       <div class="settings-section">
+        <button id="theme-toggle-btn" class="theme-toggle-btn" type="button" aria-label="테마 변경" style="margin-right: 0.25rem;">
+          ☀️
+        </button>
         <button id="settings-toggle-btn" class="api-key-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings-modal" style="display: flex; align-items: center; gap: 0.35rem;">
           ⚙️ API 설정
         </button>
@@ -271,6 +274,69 @@
     <!-- Modal actions -->
     <div class="drawer-footer">
       <button id="settings-save" class="card-btn primary" style="width: 100%; min-height: 44px;">저장 및 연동 시도</button>
+    </div>
+  </div>
+
+  <!-- Exhibition Details Modal Backdrop -->
+  <div id="details-backdrop" class="modal-backdrop"></div>
+
+  <!-- Exhibition Details Modal -->
+  <div id="details-modal" class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modal-exhibition-title">
+    <div class="modal-header">
+      <div class="modal-badge-row" id="modal-badge-container">
+        <!-- Dynamically filled badges -->
+      </div>
+      <button id="modal-close" class="modal-close-btn" aria-label="상세 정보 닫기">&times;</button>
+    </div>
+
+    <div class="modal-body">
+      <h2 class="modal-title" id="modal-exhibition-title">전시 제목</h2>
+      
+      <div class="modal-meta-grid">
+        <div class="meta-item">
+          <span class="meta-icon">🏛️</span>
+          <div class="meta-info">
+            <span class="meta-label">개최 기관</span>
+            <span class="meta-value" id="modal-venue-display">-</span>
+          </div>
+        </div>
+        <div class="meta-item">
+          <span class="meta-icon">📍</span>
+          <div class="meta-info">
+            <span class="meta-label">위치/주소</span>
+            <span class="meta-value" id="modal-address-display">-</span>
+          </div>
+        </div>
+        <div class="meta-item">
+          <span class="meta-icon">📅</span>
+          <div class="meta-info">
+            <span class="meta-label">전시 기간</span>
+            <span class="meta-value" id="modal-date-display">-</span>
+          </div>
+        </div>
+        <div class="meta-item">
+          <span class="meta-icon">💰</span>
+          <div class="meta-info">
+            <span class="meta-label">관람 비용</span>
+            <span class="meta-value" id="modal-price-display">-</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-section">
+        <h3>전시 소개</h3>
+        <p class="modal-description" id="modal-desc-display">-</p>
+      </div>
+
+      <div class="modal-source-box">
+        <span id="modal-source-name">출처: -</span>
+        <span id="modal-updated-date">기준일: -</span>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button id="modal-toggle-save" class="modal-btn primary">💙 내 캘린더 저장</button>
+      <button id="modal-view-source" class="modal-btn secondary">🔗 공식 사이트 보기</button>
     </div>
   </div>
 
