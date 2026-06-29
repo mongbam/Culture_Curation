@@ -1,350 +1,3118 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="ko" class="h-full">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>공공 오픈 API 연동형 전시 스케줄러 MVP</title>
-  <meta name="description" content="전국 공공 미술관 및 문화시설의 무료, 할인 전시 정보와 문화가 있는 날 혜택을 한눈에 확인하고, 내 주말 캘린더에 담아 간편하게 관리하세요.">
-  <link rel="stylesheet" href="css/style.css">
+  <title>아트나침반 🧭 | 전국 미술관·전시회 무료·할인 스케줄러</title>
+  <meta name="description" content="2030 가성비 문화생활러를 위한 전국 미술관 및 전시회 무료/할인 스케줄러 & 캘린더 대시보드">
   
-  <!-- Fallback script defining default empty configuration if js/config.js is missing -->
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
   <script>
-    window.CultureCurationConfig = {
-      tourApiKey: '',
-      cultureApiKey: '',
-      defaultEndpointType: 'tour',
-      debug: false
-    };
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            forest: {
+              50: '#f4f7f5',
+              100: '#e3ece6',
+              200: '#c8dacd',
+              700: '#1e3f26',
+              800: '#14331c',
+              900: '#0e2414',
+            },
+            emerald: {
+              50: '#ecfdf5',
+              500: '#10b981',
+              600: '#059669',
+              700: '#047857',
+            },
+            ivory: {
+              50: '#fbfaf7',
+              100: '#f6f3eb',
+              200: '#ebdcc5',
+            }
+          }
+        }
+      }
+    }
   </script>
-  <!-- Load developers config locally -->
-  <script src="js/config.js" onerror="console.info('js/config.js 파일이 없어 UI 입력 및 브라우저 localStorage를 대신 사용합니다.')"></script>
-</head>
-<body>
 
-  <!-- Header -->
-  <header>
-    <div class="header-container">
-      <div class="logo-section">
-        <h1>
-          <span style="font-size: 1.75rem;">🎨</span> Culture Curation
-        </h1>
-        <p>이번 달 무료·할인 전시를 한 번에 보고, 내 주말 캘린더에 저장하세요.</p>
-      </div>
-      
-      <!-- Settings Panel Trigger Button & Theme Toggle -->
-      <div class="settings-section">
-        <button id="theme-toggle-btn" class="theme-toggle-btn" type="button" aria-label="테마 변경" style="margin-right: 0.25rem;">
-          ☀️
-        </button>
-        <button id="settings-toggle-btn" class="api-key-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings-modal" style="display: flex; align-items: center; gap: 0.35rem;">
-          ⚙️ API 설정
-        </button>
-      </div>
-    </div>
+  <!-- Leaflet.js CDN -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Outfit & Pretendard Font Import -->
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap');
     
-    <!-- API Load Status Warning/Success Banner -->
-    <div id="status-banner" class="status-banner fallback" role="alert">
-      <span id="status-banner-text">실시간 데이터를 불러오지 못해 예시 데이터를 표시합니다. API Key를 입력하거나 잠시 후 다시 시도해 주세요.</span>
-      <button id="status-banner-close" class="status-banner-close" aria-label="배너 닫기">&times;</button>
-    </div>
-  </header>
+    body {
+      font-family: 'Outfit', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: #f7f5f0;
+      -webkit-font-smoothing: antialiased;
+    }
 
-  <!-- Mobile-only Filter Chips Row -->
-  <div class="mobile-chips-wrapper" id="mobile-chips-container">
-    <button class="chip-btn active" data-filter="all" id="mobile-chip-all">전국 전시</button>
-    <button class="chip-btn" data-filter="free" id="mobile-chip-free">무료만</button>
-    <button class="chip-btn" data-filter="culture" id="mobile-chip-culture">문화가있는날</button>
-    <button class="chip-btn" data-filter="weekend" id="mobile-chip-weekend">이번 주말</button>
-  </div>
+    /* Claymorphic UI Shadows */
+    .clay-card {
+      background: #ffffff;
+      border: 1.5px solid rgba(20, 51, 28, 0.08);
+      border-radius: 24px;
+      box-shadow: 
+        inset 3px 3px 6px rgba(255, 255, 255, 0.9),
+        inset -3px -3px 8px rgba(20, 51, 28, 0.04),
+        0 10px 24px -8px rgba(20, 51, 28, 0.08);
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .dark .clay-card {
+      background: #19221b;
+      border-color: rgba(200, 218, 205, 0.1);
+      box-shadow: 
+        inset 1px 1px 3px rgba(255, 255, 255, 0.05),
+        inset -2px -2px 6px rgba(0, 0, 0, 0.4),
+        0 10px 24px -8px rgba(0, 0, 0, 0.5);
+    }
 
-  <!-- Mobile Toggle Button for Map -->
-  <div style="padding: 0 1rem; margin-top: 1rem;">
-    <button class="mobile-map-toggle-btn" id="mobile-map-toggle" aria-expanded="false" aria-controls="map-sidebar-card">
-      🗺️ <span>전국 지역 격자 지도 보기</span>
-    </button>
-  </div>
+    .clay-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 
+        inset 3px 3px 6px rgba(255, 255, 255, 0.9),
+        inset -3px -3px 8px rgba(20, 51, 28, 0.04),
+        0 16px 32px -6px rgba(20, 51, 28, 0.12);
+    }
+    
+    .dark .clay-card:hover {
+      box-shadow: 
+        inset 1px 1px 3px rgba(255, 255, 255, 0.05),
+        inset -2px -2px 6px rgba(0, 0, 0, 0.4),
+        0 16px 32px -6px rgba(0, 0, 0, 0.6);
+    }
 
-  <!-- Main Container -->
-  <main>
-    <!-- Left Sidebar: Map & Filter Controls -->
-    <aside class="sidebar" id="sidebar-panel">
-      <!-- 1. Region SVG Grid Map (Collapsible on Mobile) -->
-      <section class="sidebar-card" id="map-sidebar-card">
-        <h2>전국 지역 격자 지도</h2>
-        <p style="font-size: 0.8rem; color: var(--color-muted); margin-bottom: 0.75rem;">원하는 지역을 클릭하여 해당 지역의 전시만 모아보세요.</p>
-        <div class="map-wrapper" id="map-container">
-          <!-- Dynamically populated SVG Map goes here -->
-        </div>
-        <button id="reset-region-btn" class="card-btn secondary" style="width: 100%; margin-top: 0.75rem; min-height: 38px;">전국 지역 선택 해제</button>
-      </section>
+    .clay-button {
+      background: #14331c;
+      color: #ffffff;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 
+        inset 1px 1px 3px rgba(255, 255, 255, 0.2),
+        inset -2px -2px 6px rgba(0, 0, 0, 0.3),
+        0 4px 12px rgba(20, 51, 28, 0.15);
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .clay-button:active {
+      transform: scale(0.97);
+      box-shadow: 
+        inset 2px 2px 5px rgba(0, 0, 0, 0.4),
+        inset -1px -1px 2px rgba(255, 255, 255, 0.05);
+    }
 
-      <!-- 2. Search & Detailed Filters Checkbox (Always Visible on Mobile) -->
-      <section class="sidebar-card" id="filters-sidebar-card">
-        <h2>전시 필터링</h2>
-        
-        <!-- Search -->
-        <div class="search-container">
-          <span class="search-icon">🔍</span>
-          <input type="text" id="exhibition-search" class="search-input" placeholder="전시명, 미술관, 지역 검색..." aria-label="전시 검색어 입력">
-        </div>
+    .clay-button-secondary {
+      background: #fbfaf7;
+      color: #14331c;
+      border: 1.5px solid rgba(20, 51, 28, 0.15);
+      box-shadow: 
+        inset 2px 2px 4px rgba(255, 255, 255, 0.9),
+        inset -2px -2px 4px rgba(20, 51, 28, 0.03),
+        0 4px 10px rgba(20, 51, 28, 0.05);
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .clay-button-secondary:active {
+      transform: scale(0.97);
+      box-shadow: 
+        inset 2px 2px 4px rgba(20, 51, 28, 0.1),
+        inset -1px -1px 2px rgba(255, 255, 255, 0.5);
+    }
+    
+    .dark .clay-button-secondary {
+      background: #232e26;
+      color: #e3ece6;
+      border-color: rgba(200, 218, 205, 0.2);
+      box-shadow: none;
+    }
 
-        <!-- Filter Checkboxes -->
-        <div class="filters-list">
-          <label class="filter-checkbox-label">
-            <input type="checkbox" id="filter-free-only">
-            <span>🟢 무료 전시만 보기</span>
-          </label>
-          <label class="filter-checkbox-label">
-            <input type="checkbox" id="filter-culture-day">
-            <span>🎉 문화가 있는 날 혜택만 보기</span>
-          </label>
-          <label class="filter-checkbox-label">
-            <input type="checkbox" id="filter-weekend">
-            <span>📅 이번 주말 전시만 보기</span>
-          </label>
-          <label class="filter-checkbox-label">
-            <input type="checkbox" id="filter-month" checked>
-            <span>🗓️ 이번 달 진행 중인 전시</span>
-          </label>
-          <label class="filter-checkbox-label">
-            <input type="checkbox" id="filter-ongoing" checked>
-            <span>⚡ 현재 진행 중인 전시만</span>
-          </label>
-        </div>
-      </section>
-    </aside>
+    /* Hide scrollbar but keep functionality */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
 
-    <!-- Right Content: Exhibition Card List Grid -->
-    <section class="content-area">
-      <!-- Toolbar: Selected Region Info & Sorting -->
-      <div class="toolbar">
-        <div class="toolbar-title-section">
-          <h2 id="current-region-display">전국 전시</h2>
-          <span class="toolbar-stats" id="toolbar-stats-text">불러오는 중...</span>
-        </div>
-        
-        <!-- Sorting -->
-        <div class="sort-container">
-          <label for="exhibition-sort" style="font-size: 0.85rem; font-weight: 600; color: var(--color-text-muted);">정렬</label>
-          <select id="exhibition-sort" class="sort-select">
-            <option value="endingSoon">종료 임박순</option>
-            <option value="freeFirst">무료 우선</option>
-            <option value="cultureDayFirst">문화가 있는 날 우선</option>
-            <option value="region">지역순</option>
-            <option value="venue">기관명순</option>
-          </select>
-        </div>
-      </div>
+    /* Custom Switch Gauge anims */
+    .gauge-fill {
+      transition: stroke-dashoffset 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    }
 
-      <!-- Main Cards Grid List -->
-      <div class="cards-grid" id="cards-grid">
-        <!-- Dynamically rendering cards -->
-        <div class="empty-state">
-          <div class="empty-state-icon">🔄</div>
-          <h3>데이터를 불러오는 중입니다.</h3>
-          <p>공공 데이터를 실시간으로 가져오고 있습니다. 잠시만 기다려 주세요.</p>
-        </div>
-      </div>
-    </section>
-  </main>
+    /* Admin Map Grid Styles */
+    .map-cell {
+      transition: all 0.2s ease-out;
+    }
+    .map-cell.active {
+      background-color: #14331c !important;
+      color: #ffffff !important;
+    }
+    .map-cell.active .map-free-count {
+      color: #34d399 !important;
+    }
 
-  <!-- Floating Action Button for My Calendar -->
-  <button id="calendar-fab" class="calendar-fab" aria-label="내 주말 캘린더 열기" aria-haspopup="dialog">
-    📅 내 주말 캘린더
-    <span id="calendar-fab-badge" class="calendar-fab-badge">0</span>
-  </button>
+    /* Floating Toast Animation */
+    @keyframes slideUp {
+      from { transform: translate(-50%, 100px); opacity: 0; }
+      to { transform: translate(-50%, 0); opacity: 1; }
+    }
+    .toast-anim {
+      animation: slideUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    }
+  </style>
+</head>
+<body class="h-full">
 
-  <!-- Sliding Drawer Calendar Overlay Backdrop -->
-  <div id="drawer-backdrop" class="drawer-backdrop"></div>
-
-  <!-- Sliding Drawer for Calendar -->
-  <div id="calendar-drawer" class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
-    <div class="drawer-header">
-      <h2 id="drawer-title">내 주말 캘린더</h2>
-      <button id="drawer-close" class="drawer-close-btn" aria-label="캘린더 닫기">&times;</button>
-    </div>
-
-    <div class="drawer-content">
-      <!-- 1. Stats and Total Cost Estimations -->
-      <div class="stats-box">
-        <div class="stats-grid">
-          <div class="stat-item">
-            <span class="stat-label">이번 주말 가고 싶은 곳</span>
-            <span class="stat-value highlight" id="weekend-visit-count">0개</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">저장된 무료 전시</span>
-            <span class="stat-value green" id="saved-free-count">0개</span>
-          </div>
-          <div class="stat-item" style="grid-column: 1 / -1; margin-top: 0.5rem; border-top: 1px solid var(--color-border); padding-top: 0.5rem;">
-            <span class="stat-label">예상 총 비용</span>
-            <span class="stat-value" id="estimated-total-cost" style="font-size: 1.25rem;">0원</span>
-          </div>
-        </div>
-        <div class="stats-disclaimer">
-          ※ 할인 및 상세 금액 미기입 전시는 제외된 금액입니다. 문화가 있는 날 할인 혜택 등 개별 방문 전 기관 공식 안내 확인이 필요합니다.
-        </div>
-      </div>
-
-      <!-- 2. Upcoming Weekend Visits Section -->
-      <div>
-        <div class="saved-section-title">
-          <span>이번 주말 방문 후보</span>
-          <span class="count-badge" id="weekend-section-count">0개</span>
-        </div>
-        <div class="saved-list" id="weekend-saved-list">
-          <!-- Dynamic weekend list items -->
-          <p style="font-size: 0.875rem; color: var(--color-muted); text-align: center; padding: 1rem 0;">이번 주말에 진행되는 저장된 전시가 없습니다.</p>
-        </div>
-      </div>
-
-      <!-- 3. All Saved Exhibitions Section -->
-      <div>
-        <div class="saved-section-title">
-          <span>전체 저장 목록</span>
-          <span class="count-badge" id="all-section-count">0개</span>
-        </div>
-        <div class="saved-list" id="all-saved-list">
-          <!-- Dynamic saved items -->
-          <p style="font-size: 0.875rem; color: var(--color-muted); text-align: center; padding: 1rem 0;">저장된 전시가 없습니다. 마음에 드는 전시를 저장해 보세요!</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Drawer Footer Actions -->
-    <div class="drawer-footer">
-      <button id="clear-all-saved" class="drawer-clear-btn">비우기</button>
-    </div>
-  </div>
-
-  <!-- API Multiple Keys Settings Modal Backdrop -->
-  <div id="settings-backdrop" class="drawer-backdrop"></div>
-
-  <!-- API Multiple Keys Settings Drawer/Modal -->
-  <div id="settings-modal" class="drawer" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-    <div class="drawer-header">
-      <h2 id="settings-title">⚙️ API 연동 및 보안 설정</h2>
-      <button id="settings-close" class="drawer-close-btn" aria-label="설정 닫기">&times;</button>
-    </div>
-
-    <div class="drawer-content">
-      <!-- Info box -->
-      <div class="stats-box" style="background-color: var(--color-primary-light); border-color: rgba(37, 99, 235, 0.15); margin-bottom: 0.5rem;">
-        <p style="font-size: 0.825rem; color: var(--color-primary-dark); font-weight: 500; line-height: 1.5;">
-          💡 <strong>API 인증 안내</strong>: 공공데이터포털에서 발급받은 서비스키를 아래 입력하십시오. 로컬 저장소(localStorage)에 안전하게 보관됩니다.
-        </p>
-      </div>
-
-      <!-- Settings Inputs -->
-      <div class="filters-list" style="gap: 1.25rem;">
-        <div style="display: flex; flex-direction: column; gap: 0.35rem;">
-          <label for="settings-tour-key" style="font-size: 0.85rem; font-weight: 700; color: var(--color-text-muted);">
-            1. 한국관광공사 (KTO) API Key
-          </label>
-          <input type="password" id="settings-tour-key" class="search-input" placeholder="관광공사 일반 인증키 입력" style="background-color: #ffffff;">
-          <span id="tour-key-source-info" style="font-size: 0.75rem; color: var(--color-muted); font-weight: 500;"></span>
-        </div>
-
-        <div style="display: flex; flex-direction: column; gap: 0.35rem;">
-          <label for="settings-culture-key" style="font-size: 0.85rem; font-weight: 700; color: var(--color-text-muted);">
-            2. 한국문화정보원 (KCISA) API Key
-          </label>
-          <input type="password" id="settings-culture-key" class="search-input" placeholder="문화포털 일반 인증키 입력" style="background-color: #ffffff;">
-          <span id="culture-key-source-info" style="font-size: 0.75rem; color: var(--color-muted); font-weight: 500;"></span>
-        </div>
-
-        <div style="display: flex; flex-direction: column; gap: 0.35rem;">
-          <label for="settings-endpoint-type" style="font-size: 0.85rem; font-weight: 700; color: var(--color-text-muted);">
-            3. 사용할 우선순위 API 선택
-          </label>
-          <select id="settings-endpoint-type" class="sort-select" style="width: 100%; background-color: #ffffff; padding-right: 2rem;">
-            <option value="tour">한국관광공사 국문 관광정보 (추천)</option>
-            <option value="culture">한국문화정보원 문화체험정보</option>
-          </select>
-        </div>
-      </div>
-
-      <!-- Security advice -->
-      <div class="stats-box" style="margin-top: auto; font-size: 0.775rem; color: var(--color-text-muted); line-height: 1.5; border-style: dashed;">
-        🛡️ <strong>보안 강화 권장사항</strong>:<br>
-        배포/운영 시 소스코드에 API 키가 노출되지 않도록 프로젝트 루트 폴더에 <code>js/config.js</code> 파일을 생성하여 키를 정의하십시오. (README 참고) 이 파일은 git 추적 대상에서 제외되므로 코드를 GitHub에 업로드해도 안전합니다.
-      </div>
-    </div>
-
-    <!-- Modal actions -->
-    <div class="drawer-footer">
-      <button id="settings-save" class="card-btn primary" style="width: 100%; min-height: 44px;">저장 및 연동 시도</button>
-    </div>
-  </div>
-
-  <!-- Exhibition Details Modal Backdrop -->
-  <div id="details-backdrop" class="modal-backdrop"></div>
-
-  <!-- Exhibition Details Modal -->
-  <div id="details-modal" class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modal-exhibition-title">
-    <div class="modal-header">
-      <div class="modal-badge-row" id="modal-badge-container">
-        <!-- Dynamically filled badges -->
-      </div>
-      <button id="modal-close" class="modal-close-btn" aria-label="상세 정보 닫기">&times;</button>
-    </div>
-
-    <div class="modal-body">
-      <h2 class="modal-title" id="modal-exhibition-title">전시 제목</h2>
+  <!-- Desktop Backdrop and Shell Centerer -->
+  <div class="min-h-full sm:py-6 sm:px-4 flex items-center justify-center bg-stone-100 dark:bg-stone-900 transition-colors duration-300">
+    
+    <!-- PC Wide Layout / Mobile Frame Application Window Container -->
+    <div class="w-full max-w-md lg:max-w-6xl min-h-screen lg:min-h-[820px] lg:max-h-[900px] lg:h-[860px] lg:rounded-[36px] bg-stone-50 dark:bg-[#121814] shadow-2xl flex flex-col relative overflow-hidden border border-stone-200 dark:border-stone-850 transition-all duration-300">
       
-      <div class="modal-meta-grid">
-        <div class="meta-item">
-          <span class="meta-icon">🏛️</span>
-          <div class="meta-info">
-            <span class="meta-label">개최 기관</span>
-            <span class="meta-value" id="modal-venue-display">-</span>
+      <!-- 1. Header (Sticky Top, stretches across top of the card shell) -->
+      <header class="sticky top-0 z-30 bg-stone-50/95 dark:bg-[#121814]/95 backdrop-blur-md px-5 py-4 border-b border-stone-200/60 dark:border-stone-800 flex justify-between items-center transition-colors duration-300 shrink-0">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-full bg-forest-100 dark:bg-forest-800 flex items-center justify-center text-lg select-none">🧭</div>
+          <div>
+            <h1 class="text-lg font-bold text-forest-800 dark:text-forest-100 tracking-tight leading-none">아트나침반</h1>
+            <p class="text-[10px] text-stone-500 dark:text-stone-400 font-medium mt-0.5">전국 미술관/전시회 무료·할인 캘린더</p>
           </div>
         </div>
-        <div class="meta-item">
-          <span class="meta-icon">📍</span>
-          <div class="meta-info">
-            <span class="meta-label">위치/주소</span>
-            <span class="meta-value" id="modal-address-display">-</span>
-          </div>
+        
+        <!-- Top Toolbar Actions -->
+        <div class="flex items-center gap-2">
+          <!-- Dark Mode Toggle Button -->
+          <button id="theme-toggle" class="w-9 h-9 rounded-xl hover:bg-stone-200/50 dark:hover:bg-stone-800/50 flex items-center justify-center text-stone-600 dark:text-stone-300 transition-colors select-none" aria-label="테마 전환">
+            ☀️
+          </button>
+          <!-- Settings Trigger -->
+          <button id="btn-open-settings" class="w-9 h-9 rounded-xl hover:bg-stone-200/50 dark:hover:bg-stone-800/50 flex items-center justify-center text-stone-600 dark:text-stone-300 transition-colors select-none" aria-label="API 키 설정">
+            ⚙️
+          </button>
         </div>
-        <div class="meta-item">
-          <span class="meta-icon">📅</span>
-          <div class="meta-info">
-            <span class="meta-label">전시 기간</span>
-            <span class="meta-value" id="modal-date-display">-</span>
-          </div>
+      </header>
+
+      <!-- 2. Notice Banner (Shows API Integration Status) -->
+      <div id="notice-banner" class="mx-4 mt-3 p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/30 flex items-start gap-2.5 transition-all text-xs text-amber-800 dark:text-amber-300 font-medium shrink-0">
+        <span class="text-sm select-none">⚠️</span>
+        <div class="flex-1 leading-relaxed">
+          <span id="banner-text">API 키가 설정되지 않아 실시간 데이터를 불러올 수 없습니다. 내장된 5종의 예시 데이터를 우선 표기합니다.</span>
         </div>
-        <div class="meta-item">
-          <span class="meta-icon">💰</span>
-          <div class="meta-info">
-            <span class="meta-label">관람 비용</span>
-            <span class="meta-value" id="modal-price-display">-</span>
+        <button id="btn-close-banner" class="text-amber-500 dark:text-amber-400 hover:text-amber-700 font-bold px-1 text-sm select-none">&times;</button>
+      </div>
+
+      <!-- 3. Dynamic Screen Area (Flex row layout on Desktop, Scrollable container on mobile) -->
+      <main class="flex-1 overflow-y-auto lg:overflow-hidden no-scrollbar p-4 lg:p-0 pb-24 lg:pb-0 flex flex-col">
+        
+        <!-- SECTION 1: EXHIBITIONS NAVIGATION TAB (전시회 나침반) -->
+        <section id="tab-exhibitions" class="space-y-4 lg:space-y-0 lg:flex lg:flex-row lg:h-full lg:overflow-hidden flex-1 w-full">
+          
+          <!-- Left Column (Sidebar: Region grid map & Detailed advanced filters) -->
+          <div class="space-y-4 lg:space-y-5 lg:w-[380px] lg:shrink-0 lg:border-r lg:border-stone-200 lg:dark:border-stone-800 lg:p-5 lg:pb-24 lg:overflow-y-auto lg:h-full lg:no-scrollbar flex flex-col shrink-0">
+            
+            <!-- Grid Map Accordion Card -->
+            <div class="clay-card p-4 space-y-3 dark:bg-[#18201a]">
+              <div class="flex justify-between items-center">
+                <div>
+                  <h2 class="text-sm font-bold text-forest-800 dark:text-forest-100">전국 지역 격자 지도</h2>
+                  <p class="text-[10px] text-stone-400 dark:text-stone-500 mt-0.5">지자체 셀을 눌러 원하는 지역을 필터링하세요.</p>
+                </div>
+                <button id="btn-reset-region" class="text-[11px] font-bold text-emerald-600 dark:text-emerald-500 hover:underline select-none">전국 초기화</button>
+              </div>
+
+              <!-- South Korea Grid Map (Sleek CSS Grid Map) -->
+              <div class="grid grid-cols-4 gap-2 pt-1">
+                <div id="map-grid-container" class="col-span-4 grid grid-cols-4 gap-1.5"></div>
+              </div>
+            </div>
+
+            <!-- Fine-Grained Advanced Filter Card -->
+            <div class="clay-card p-4 space-y-4 dark:bg-[#18201a] select-text">
+              <!-- Category Filters -->
+              <div class="space-y-1.5">
+                <span class="text-[10px] text-stone-400 dark:text-stone-500 font-bold">문화행사 분야 선택</span>
+                <div class="grid grid-cols-4 gap-1">
+                  <button type="button" class="btn-category-filter active py-1.5 rounded-lg text-[9px] font-bold border border-emerald-600 dark:border-emerald-500 text-emerald-600 dark:text-emerald-400 bg-emerald-50/40 dark:bg-emerald-950/20 transition-all select-none" data-val="all">전체</button>
+                  <button type="button" class="btn-category-filter py-1.5 rounded-lg text-[9px] font-bold border border-stone-200 dark:border-stone-800 text-stone-400 dark:text-stone-500 bg-white dark:bg-[#18201a]/40 transition-all select-none" data-val="전시">🖼️ 전시</button>
+                  <button type="button" class="btn-category-filter py-1.5 rounded-lg text-[9px] font-bold border border-stone-200 dark:border-stone-800 text-stone-400 dark:text-stone-500 bg-white dark:bg-[#18201a]/40 transition-all select-none" data-val="공연">🎭 공연</button>
+                  <button type="button" class="btn-category-filter py-1.5 rounded-lg text-[9px] font-bold border border-stone-200 dark:border-stone-800 text-stone-400 dark:text-stone-500 bg-white dark:bg-[#18201a]/40 transition-all select-none" data-val="콘서트">🎤 콘서트</button>
+                </div>
+              </div>
+
+              <!-- Sub-Category: Concert Artist Filters -->
+              <div id="concert-subfilter-wrapper" class="space-y-1.5 hidden transition-all duration-300">
+                <span class="text-[9px] text-stone-400 dark:text-stone-500 font-bold pl-1">↳ 아티스트 국적 분류</span>
+                <div class="grid grid-cols-3 gap-1">
+                  <button type="button" class="btn-concert-filter active py-1.5 rounded-lg text-[9px] font-bold border border-emerald-600 dark:border-emerald-500 text-emerald-600 dark:text-emerald-400 bg-emerald-50/40 dark:bg-emerald-950/20 transition-all select-none" data-val="all">전체 콘서트</button>
+                  <button type="button" class="btn-concert-filter py-1.5 rounded-lg text-[9px] font-bold border border-stone-200 dark:border-stone-800 text-stone-400 dark:text-stone-500 bg-white dark:bg-[#18201a]/40 transition-all select-none" data-val="domestic">🇰🇷 국내 가수</button>
+                  <button type="button" class="btn-concert-filter py-1.5 rounded-lg text-[9px] font-bold border border-stone-200 dark:border-stone-800 text-stone-400 dark:text-stone-500 bg-white dark:bg-[#18201a]/40 transition-all select-none" data-val="foreign">🇺🇸 해외 가수</button>
+                </div>
+              </div>
+
+              <!-- Search bar -->
+              <div class="space-y-1">
+                <label class="text-[10px] text-stone-400 dark:text-stone-500 font-bold">문화행사 통합 검색</label>
+                <div class="relative w-full">
+                  <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-stone-400">🔍</span>
+                  <input type="text" id="search-input" placeholder="전시/공연명, 출연진, 장소명, 주소 검색..." class="w-full bg-white dark:bg-[#18201a] border border-stone-200/80 dark:border-stone-800 text-stone-850 dark:text-stone-200 placeholder-stone-400 dark:placeholder-stone-600 rounded-xl pl-9 pr-3 py-2 text-[11px] font-medium focus:outline-none focus:border-emerald-600 transition-colors shadow-sm">
+                </div>
+              </div>
+
+              <!-- Price Filters (전체, 무료, 문화가있는날) -->
+              <div class="space-y-1.5">
+                <span class="text-[10px] text-stone-400 dark:text-stone-500 font-bold">비용/혜택 조건</span>
+                <div class="grid grid-cols-3 gap-1">
+                  <button type="button" class="btn-price-filter active py-1.5 rounded-lg text-[9px] font-bold border border-emerald-600 dark:border-emerald-500 text-emerald-600 dark:text-emerald-400 bg-emerald-50/40 dark:bg-emerald-950/20 transition-all select-none" data-val="all">전체</button>
+                  <button type="button" class="btn-price-filter py-1.5 rounded-lg text-[9px] font-bold border border-stone-200 dark:border-stone-800 text-stone-400 dark:text-stone-500 bg-white dark:bg-[#18201a]/40 transition-all select-none" data-val="free">100% 무료</button>
+                  <button type="button" class="btn-price-filter py-1.5 rounded-lg text-[9px] font-bold border border-stone-200 dark:border-stone-800 text-stone-400 dark:text-stone-500 bg-white dark:bg-[#18201a]/40 transition-all select-none" data-val="culture">문화의날</button>
+                </div>
+              </div>
+
+              <!-- Date Filters (전체, 진행중, 주말, 이번달, 마감임박, 오픈예정) -->
+              <div class="space-y-1.5">
+                <span class="text-[10px] text-stone-400 dark:text-stone-500 font-bold">일정/기간 정밀 선택</span>
+                <div class="grid grid-cols-2 gap-1.5">
+                  <button type="button" class="btn-date-filter active py-1.5 rounded-lg text-[9px] font-bold border border-emerald-600 dark:border-emerald-500 text-emerald-600 dark:text-emerald-400 bg-emerald-50/40 dark:bg-emerald-950/20 transition-all select-none" data-val="all">전체 기간</button>
+                  <button type="button" class="btn-date-filter py-1.5 rounded-lg text-[9px] font-bold border border-stone-200 dark:border-stone-800 text-stone-400 dark:text-stone-500 bg-white dark:bg-[#18201a]/40 transition-all select-none" data-val="ongoing">현재 진행중</button>
+                  <button type="button" class="btn-date-filter py-1.5 rounded-lg text-[9px] font-bold border border-stone-200 dark:border-stone-800 text-stone-400 dark:text-stone-500 bg-white dark:bg-[#18201a]/40 transition-all select-none" data-val="weekend">이번 주말</button>
+                  <button type="button" class="btn-date-filter py-1.5 rounded-lg text-[9px] font-bold border border-stone-200 dark:border-stone-800 text-stone-400 dark:text-stone-500 bg-white dark:bg-[#18201a]/40 transition-all select-none" data-val="month">이번 달</button>
+                  <button type="button" class="btn-date-filter py-1.5 rounded-lg text-[9px] font-bold border border-stone-200 dark:border-stone-800 text-stone-400 dark:text-stone-500 bg-white dark:bg-[#18201a]/40 transition-all select-none" data-val="ending">종료 임박 (7일)</button>
+                  <button type="button" class="btn-date-filter py-1.5 rounded-lg text-[9px] font-bold border border-stone-200 dark:border-stone-800 text-stone-400 dark:text-stone-500 bg-white dark:bg-[#18201a]/40 transition-all select-none" data-val="upcoming">오픈 예정</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Right Column (Toolbar header and Exhibition Cards Grid layout) -->
+          <div class="space-y-4 lg:flex-1 lg:p-5 lg:pb-24 lg:overflow-y-auto lg:h-full lg:no-scrollbar flex flex-col">
+            
+            <!-- Dynamic Statistics and Sort Select Toolbar -->
+            <div class="flex items-center justify-between px-1 text-xs shrink-0 select-none">
+              <span id="exhibition-stats" class="font-bold text-stone-600 dark:text-stone-400">검색결과: 5개</span>
+              <div class="flex items-center gap-2">
+                <!-- View mode toggle buttons -->
+                <div class="flex items-center border border-stone-200 dark:border-stone-700 rounded-lg p-0.5 bg-stone-100 dark:bg-stone-800">
+                  <button id="btn-view-card" type="button" class="px-2 py-0.5 rounded text-[9px] font-bold transition-all bg-white dark:bg-stone-700 text-stone-800 dark:text-stone-100 shadow-sm" title="카드형 보기">카드형</button>
+                  <button id="btn-view-list" type="button" class="px-2 py-0.5 rounded text-[9px] font-bold transition-all text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-400" title="리스트형 보기">리스트형</button>
+                  <button id="btn-view-map-opt" type="button" class="px-2 py-0.5 rounded text-[9px] font-bold transition-all text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-400" title="지도형 보기">지도형</button>
+                </div>
+                <div class="flex items-center gap-1">
+                  <label for="sort-select" class="text-stone-400 dark:text-stone-500 text-[10px] font-bold">정렬</label>
+                  <select id="sort-select" class="bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-stone-700 dark:text-stone-200 rounded-lg px-1.5 py-1 text-[11px] font-bold focus:outline-none">
+                    <option value="endingSoon">종료 임박순</option>
+                    <option value="freeFirst">무료 전시 우선</option>
+                    <option value="cultureDayFirst">문화의날 혜택 우선</option>
+                    <option value="alphabetical">이름 가나다순</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- Interactive Map Section -->
+            <div id="map-section" class="clay-card p-4 space-y-3 dark:bg-[#18201a] shrink-0 hidden">
+              <div class="flex justify-between items-center text-xs select-none">
+                <span class="font-bold text-forest-800 dark:text-stone-100 flex items-center gap-1">🗺️ 실시간 위치 분포 지도 <span id="map-exhibition-count" class="text-[10px] bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400 px-1.5 py-0.5 rounded-full font-bold">0개 표시중</span></span>
+                <button id="btn-toggle-map" class="text-[10px] font-bold text-emerald-600 dark:text-emerald-500 hover:underline">접기</button>
+              </div>
+              <div id="map-container-wrapper" class="transition-all duration-300 overflow-hidden h-[240px]">
+                <div id="leaflet-map" class="w-full h-full rounded-xl shadow-inner border border-stone-200/60 dark:border-stone-800" style="z-index: 10;"></div>
+              </div>
+            </div>
+
+            <!-- Cards Scroll Container (Adaptive 2-column grid layout on PC viewport) -->
+            <div id="exhibition-cards-container" class="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-1 lg:pb-6 flex-1">
+              <!-- Dynamic cards go here -->
+            </div>
+          </div>
+        </section>
+
+        <!-- SECTION 2: MY CALENDAR NAVIGATION TAB (나의 주말 캘린더) -->
+        <section id="tab-calendar" class="space-y-5 hidden lg:space-y-0 lg:flex lg:flex-row lg:h-full lg:overflow-hidden flex-1 w-full">
+          
+          <!-- Left Column: AI Route Assistant & Collapsible Budget Gauge -->
+          <div class="space-y-4 lg:w-[380px] lg:shrink-0 lg:border-r lg:border-stone-200 lg:dark:border-stone-800 lg:p-5 lg:pb-24 lg:overflow-y-auto lg:h-full lg:no-scrollbar flex flex-col shrink-0">
+            <!-- AI Route Assistant Dashboard (동선 도우미) -->
+            <div class="clay-card p-5 space-y-4 dark:bg-[#18201a]">
+              <div class="flex items-start gap-2.5 select-text">
+                <span class="text-xl select-none">🧭</span>
+                <div class="flex-1">
+                  <h2 class="text-sm font-black text-forest-800 dark:text-stone-100">AI 주말 동선 도우미 (Route Assistant)</h2>
+                  <p class="text-[10px] text-stone-400 dark:text-stone-500 mt-0.5">내 캘린더에 담긴 전시들의 요일별 동선과 이동 효율을 분석해 드립니다.</p>
+                </div>
+              </div>
+              
+              <div id="route-analysis-box" class="bg-stone-50 dark:bg-stone-900/60 p-3 rounded-2xl border border-stone-200/40 dark:border-stone-850 text-[11px] leading-relaxed select-text">
+                <p class="text-stone-500 dark:text-stone-400 font-medium">주말 전시회를 추가하고 일정을 토요일/일요일에 배정해 보세요! 지역 근접성을 자동 판별하여 최단 동선을 조언해 줍니다.</p>
+              </div>
+              
+              <!-- Collapsible Date Cost summary drawer -->
+              <details class="group border-t border-stone-200/30 dark:border-stone-800/40 pt-2.5">
+                <summary class="flex justify-between items-center text-[10px] text-stone-400 dark:text-stone-500 font-bold cursor-pointer hover:text-stone-600 dark:hover:text-stone-300 transition-colors list-none select-none">
+                  <span class="flex items-center gap-1">💰 주말 총 지출 정산 <span id="summary-cost-txt" class="text-forest-700 dark:text-forest-400 font-black">0원</span></span>
+                  <span class="text-[8px] group-open:rotate-180 transition-transform">▼</span>
+                </summary>
+                <div class="flex flex-col items-center gap-3 pt-3.5 pb-1">
+                  <!-- Circular SVG cost gauge -->
+                  <div class="relative w-32 h-32 flex items-center justify-center">
+                    <svg class="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                      <circle class="text-stone-100 dark:text-stone-800" stroke-width="8" stroke="currentColor" fill="transparent" r="40" cx="50" cy="50"/>
+                      <circle id="gauge-progress" class="gauge-fill text-emerald-500 transition-all" stroke-width="8" stroke-dasharray="251.2" stroke-dashoffset="251.2" stroke-linecap="round" stroke="currentColor" fill="transparent" r="40" cx="50" cy="50"/>
+                    </svg>
+                    <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
+                      <span id="gauge-cost-display" class="text-sm font-black text-forest-800 dark:text-stone-100">0원</span>
+                      <span id="gauge-badge" class="text-[8px] font-extrabold px-1 py-0.5 bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400 rounded-full mt-1">가성비 최고! 💸</span>
+                    </div>
+                  </div>
+                  <p id="gauge-advice-text" class="text-[10px] text-stone-500 dark:text-stone-400 font-medium text-center leading-relaxed max-w-[280px]">
+                    가보고 싶은 전시회를 캘린더에 담아 이번 주말 문화생활 예산을 절약해 보세요!
+                  </p>
+                </div>
+              </details>
+            </div>
+
+            <!-- AI Route Visualization Map Card -->
+            <div id="calendar-map-section" class="clay-card p-4 space-y-3 dark:bg-[#18201a]">
+              <div class="flex justify-between items-center text-xs select-none">
+                <span class="font-bold text-forest-800 dark:text-stone-100 flex items-center gap-1">🗺️ AI 동선 시각화 지도</span>
+                <span class="text-[9px] text-stone-400 dark:text-stone-500 font-bold">날짜별 경로</span>
+              </div>
+              <div id="calendar-view-date-selector-wrapper" class="w-full">
+                <!-- Dropdown injected dynamically by renderCalendarTab() -->
+              </div>
+              <div id="calendar-map" class="w-full h-[220px] rounded-xl shadow-inner border border-stone-200/60 dark:border-stone-800" style="z-index: 10;"></div>
+            </div>
+          </div>
+          
+          <!-- Right Column: Timeline Schedule lists -->
+          <div class="space-y-4 lg:flex-1 lg:p-5 lg:pb-24 lg:overflow-y-auto lg:h-full lg:no-scrollbar flex flex-col">
+            <!-- Timeline header & Clear Button -->
+            <div class="flex justify-between items-center px-1 shrink-0 select-none">
+              <h3 class="text-xs font-bold text-stone-600 dark:text-stone-300">내 주말 방문 전시 후보 리스트</h3>
+              <button id="btn-clear-calendar" class="text-[10px] font-bold text-rose-500 dark:text-rose-400 border border-rose-200 dark:border-rose-950 px-2 py-1 rounded-lg bg-rose-50/50 dark:bg-rose-950/10 hover:bg-rose-50 hover:underline transition-all">전체 비우기</button>
+            </div>
+
+            <!-- Timeline list wrapper -->
+            <div id="calendar-timeline-container" class="relative pl-6 border-l-2 border-stone-200 dark:border-stone-800 ml-3.5 space-y-6 flex-1 lg:pb-6">
+              <!-- Dynamic timeline items loaded here -->
+            </div>
+          </div>
+        </section>
+
+      </main>
+
+      <!-- 4. Sticky Bottom Tab Navigation (For SPA View Toggles) -->
+      <nav class="absolute bottom-0 left-0 right-0 z-40 bg-stone-50/95 dark:bg-[#121814]/95 backdrop-blur-md border-t border-stone-200/60 dark:border-stone-800 flex justify-around py-3.5 transition-colors duration-300">
+        <button id="nav-btn-exhibitions" class="flex flex-col items-center gap-1 text-emerald-700 dark:text-emerald-400 select-none group transition-all" aria-label="전시회 나침반 탭 열기">
+          <span class="text-xl filter drop-shadow">🧭</span>
+          <span class="text-[10px] font-black tracking-tight transition-colors">전시 나침반</span>
+        </button>
+        <button id="nav-btn-calendar" class="flex flex-col items-center gap-1 text-stone-400 dark:text-stone-500 select-none relative group transition-all" aria-label="나만의 주말 캘린더 탭 열기">
+          <span class="text-xl filter drop-shadow">📅</span>
+          <span class="text-[10px] font-bold tracking-tight transition-colors">나만의 캘린더</span>
+          <!-- Dynamic count badge -->
+          <span id="calendar-count-badge" class="absolute -top-1 right-2 w-4 h-4 rounded-full bg-rose-500 text-white text-[8px] font-black flex items-center justify-center border border-white dark:border-stone-900 scale-0 transition-transform">0</span>
+        </button>
+      </nav>
+
+      <!-- 5. API Key Settings Drawer (Sliding Up Bottom Sheet Modal) -->
+      <div id="settings-drawer" class="absolute inset-0 bg-black/60 z-50 transition-opacity duration-300 opacity-0 pointer-events-none flex flex-col justify-end">
+        <div id="settings-content" class="w-full bg-stone-50 dark:bg-[#121814] rounded-t-[32px] max-h-[85%] flex flex-col translate-y-full transition-transform duration-300 overflow-hidden border-t border-stone-200 dark:border-stone-850">
+          <!-- M3 Bottom Sheet Drag Handle -->
+          <div class="w-10 h-1 bg-stone-300 dark:bg-stone-700 rounded-full mx-auto my-3 shrink-0"></div>
+          <div class="px-5 py-2 border-b border-stone-200/50 dark:border-stone-800/80 flex justify-between items-center bg-stone-50 dark:bg-[#121814]">
+            <div>
+              <h2 class="text-sm font-bold text-forest-800 dark:text-forest-100">⚙️ API 연동 및 보안 설정</h2>
+              <p class="text-[9px] text-stone-400 dark:text-stone-500 font-medium mt-0.5">공공데이터 API를 실시간으로 교체하고 CORS 설정을 수행합니다.</p>
+            </div>
+            <button id="btn-close-settings" class="text-xl text-stone-400 dark:text-stone-500 font-bold hover:text-stone-700 w-8 h-8 rounded-full flex items-center justify-center">&times;</button>
+          </div>
+          
+          <div class="flex-1 overflow-y-auto p-5 space-y-4 text-xs no-scrollbar bg-stone-50 dark:bg-[#121814]">
+            
+            <div class="bg-forest-50 dark:bg-forest-950/20 border border-forest-100 dark:border-forest-900/30 p-3 rounded-2xl text-[10px] leading-relaxed text-forest-700 dark:text-forest-300 font-medium">
+              💡 <strong>API 인증 안내</strong>: 공공데이터포털(data.go.kr) 또는 서울열린데이터광장에서 발급받은 인증키를 입력하면 실시간 조회가 가능합니다. 입력한 키는 브라우저 로컬 저장소(localStorage)에 보안 저장됩니다.
+            </div>
+
+            <div class="space-y-3">
+              <!-- KCISA Key input -->
+              <div class="space-y-1">
+                <label for="input-kcisa-key" class="block font-bold text-stone-600 dark:text-stone-300 text-[10px]">1. 한국문화정보원 (KCISA) API Key</label>
+                <input type="password" id="input-kcisa-key" placeholder="KCISA 문화정보조회 인증키 입력" class="w-full bg-white dark:bg-[#18201a] border border-stone-250 dark:border-stone-800 text-stone-800 dark:text-stone-200 rounded-xl px-3.5 py-2.5 text-[11px] focus:outline-none focus:border-emerald-600 transition-colors">
+                <span id="kcisa-key-status" class="block text-[8px] text-stone-400 font-medium"></span>
+              </div>
+
+              <!-- Seoul Key input -->
+              <div class="space-y-1">
+                <label for="input-seoul-key" class="block font-bold text-stone-600 dark:text-stone-300 text-[10px]">2. 서울시 열린데이터광장 API Key</label>
+                <input type="password" id="input-seoul-key" placeholder="서울시 문화행사 인증키 입력" class="w-full bg-white dark:bg-[#18201a] border border-stone-250 dark:border-stone-800 text-stone-800 dark:text-stone-200 rounded-xl px-3.5 py-2.5 text-[11px] focus:outline-none focus:border-emerald-600 transition-colors">
+                <span id="seoul-key-status" class="block text-[8px] text-stone-400 font-medium"></span>
+              </div>
+
+              <!-- KOPIS Key input -->
+              <div class="space-y-1">
+                <label for="input-kopis-key" class="block font-bold text-stone-600 dark:text-stone-300 text-[10px]">3. 문화포털 (KCISA) 문화예술공연 API Key</label>
+                <input type="password" id="input-kopis-key" placeholder="문화포털 문화예술공연 인증키 입력" class="w-full bg-white dark:bg-[#18201a] border border-stone-250 dark:border-stone-800 text-stone-800 dark:text-stone-200 rounded-xl px-3.5 py-2.5 text-[11px] focus:outline-none focus:border-emerald-600 transition-colors">
+                <span id="kopis-key-status" class="block text-[8px] text-stone-400 font-medium"></span>
+              </div>
+
+              <!-- Priority Endpoint select -->
+              <div class="space-y-1">
+                <label for="select-endpoint" class="block font-bold text-stone-600 dark:text-stone-300 text-[10px]">4. 우선 적용 공공 API 소스</label>
+                <select id="select-endpoint" class="w-full bg-white dark:bg-[#18201a] border border-stone-250 dark:border-stone-800 text-stone-800 dark:text-stone-200 rounded-xl px-3.5 py-2.5 text-[11px] focus:outline-none">
+                  <option value="all">전체 소스 통합 조회 (Deduplicated)</option>
+                  <option value="korea">한국문화정보원 (전국 통합 전시데이터)</option>
+                  <option value="seoul">서울시 열린데이터광장 (서울시 특화 전시데이터)</option>
+                  <option value="kopis">문화체육관광부 (문화포털 문화예술공연 통합데이터)</option>
+                </select>
+              </div>
+
+              <!-- CORS Proxy Server select -->
+              <div class="space-y-1">
+                <label for="select-proxy" class="block font-bold text-stone-600 dark:text-stone-300 text-[10px]">5. CORS 우회 프록시 서버</label>
+                <select id="select-proxy" class="w-full bg-white dark:bg-[#18201a] border border-stone-250 dark:border-stone-800 text-stone-800 dark:text-stone-200 rounded-xl px-3.5 py-2.5 text-[11px] focus:outline-none">
+                  <option value="allorigins">AllOrigins (allorigins.win - 권장)</option>
+                  <option value="corsproxy">Corsproxy.io (무료 CORS 우회)</option>
+                  <option value="thingproxy">ThingProxy (freeboard.io)</option>
+                  <option value="none">직접 호출 (프록시 우회 해제)</option>
+                </select>
+              </div>
+            </div>
+            
+            <div class="border-t border-stone-200 dark:border-stone-800/80 pt-3 text-[9px] text-stone-400 dark:text-stone-500 space-y-1 font-medium">
+              🛡️ <strong>보안 강화 권장사항</strong>:<br>
+              실제 웹 배포 환경에서는 인증키 탈취를 방지하기 위해 공공데이터포털 설정에서 도메인 제한(Referer IP) 기능을 연동하여 사용하시길 바랍니다.
+            </div>
+          </div>
+          
+          <div class="p-4 bg-stone-100 dark:bg-[#141b16] border-t border-stone-200 dark:border-stone-850 flex gap-2">
+            <button id="btn-reset-keys" class="flex-1 clay-button-secondary py-3 text-xs font-bold rounded-2xl select-none">키 초기화</button>
+            <button id="btn-save-settings" class="flex-[2] clay-button py-3 text-xs font-bold rounded-2xl select-none">설정 저장 및 연동</button>
           </div>
         </div>
       </div>
 
-      <div class="modal-section">
-        <h3>전시 소개</h3>
-        <p class="modal-description" id="modal-desc-display">-</p>
+      <!-- 6. Exhibition Details Modal (Standard Screen Dialog Overlays) -->
+      <div id="details-modal" class="absolute inset-0 bg-black/60 z-50 transition-opacity duration-300 opacity-0 pointer-events-none flex flex-col justify-end">
+        <div id="details-content" class="w-full bg-stone-50 dark:bg-[#121814] rounded-t-[32px] max-h-[90%] flex flex-col translate-y-full transition-transform duration-300 overflow-hidden border-t border-stone-200 dark:border-stone-850">
+          <!-- M3 Bottom Sheet Drag Handle -->
+          <div class="w-10 h-1 bg-stone-300 dark:bg-stone-700 rounded-full mx-auto my-3 shrink-0"></div>
+          
+          <!-- Details Header -->
+          <div class="px-5 py-2 border-b border-stone-200/50 dark:border-stone-800/80 flex justify-between items-start bg-stone-50 dark:bg-[#121814]">
+            <div class="space-y-1.5 flex-1 pr-4">
+              <div id="modal-badges" class="flex flex-wrap gap-1"></div>
+              <h2 id="modal-title" class="text-sm font-black text-forest-800 dark:text-stone-100 leading-snug">전시회 상세 제목</h2>
+            </div>
+            <button id="btn-close-details" class="text-xl text-stone-400 dark:text-stone-500 font-bold hover:text-stone-700 w-8 h-8 rounded-full flex items-center justify-center shrink-0">&times;</button>
+          </div>
+
+          <!-- Details Content (Scrollable) -->
+          <div class="flex-1 overflow-y-auto p-5 space-y-4 text-xs no-scrollbar bg-stone-50 dark:bg-[#121814]">
+            <!-- Meta Grid Information -->
+            <div class="grid grid-cols-2 gap-3 bg-stone-100/50 dark:bg-[#18201a]/40 p-4 rounded-2xl border border-stone-200/30 dark:border-stone-800/50">
+              <div class="space-y-1">
+                <span class="text-stone-400 dark:text-stone-500 font-bold text-[9px] uppercase tracking-wider block">🏛️ 개최 기관</span>
+                <span id="modal-venue" class="text-[11px] font-black text-stone-800 dark:text-stone-200 block">-</span>
+              </div>
+              <div class="space-y-1">
+                <span class="text-stone-400 dark:text-stone-500 font-bold text-[9px] uppercase tracking-wider block">📍 상세 주소</span>
+                <span id="modal-address" class="text-[11px] font-black text-stone-800 dark:text-stone-200 block">-</span>
+              </div>
+              <div class="space-y-1">
+                <span class="text-stone-400 dark:text-stone-500 font-bold text-[9px] uppercase tracking-wider block">📅 전시 기간</span>
+                <span id="modal-dates" class="text-[11px] font-black text-stone-800 dark:text-stone-200 block">-</span>
+              </div>
+              <div class="space-y-1">
+                <span class="text-stone-400 dark:text-stone-500 font-bold text-[9px] uppercase tracking-wider block">💰 관람 요금</span>
+                <span id="modal-price" class="text-[11px] font-black text-emerald-600 dark:text-emerald-400 block">-</span>
+              </div>
+            </div>
+
+            <!-- Detailed Description -->
+            <div class="space-y-1.5">
+              <h3 class="text-stone-400 dark:text-stone-500 font-black text-[9px] uppercase tracking-wider">🗒️ 전시 소개</h3>
+              <p id="modal-description" class="text-stone-700 dark:text-stone-300 font-medium leading-relaxed bg-white dark:bg-[#18201a] p-4 rounded-2xl border border-stone-200/40 dark:border-stone-800/40 text-[11px] whitespace-pre-line"></p>
+            </div>
+
+            <!-- Footer Details Metadata -->
+            <div class="flex justify-between items-center text-[9px] text-stone-400 font-bold border-t border-stone-200/50 dark:border-stone-800/80 pt-3">
+              <span id="modal-source">출처: 공공데이터포털</span>
+              <span id="modal-updated">기준일: -</span>
+            </div>
+          </div>
+
+          <!-- Bottom Actions -->
+          <div class="p-4 bg-stone-100 dark:bg-[#141b16] border-t border-stone-200 dark:border-stone-850 flex gap-2">
+            <button id="modal-btn-source" class="flex-1 clay-button-secondary py-3.5 text-xs font-bold rounded-2xl select-none">🔗 공식 사이트</button>
+            <button id="modal-btn-save" class="flex-[1.5] clay-button py-3.5 text-xs font-bold rounded-2xl select-none">💙 캘린더 담기</button>
+          </div>
+        </div>
       </div>
 
-      <div class="modal-source-box">
-        <span id="modal-source-name">출처: -</span>
-        <span id="modal-updated-date">기준일: -</span>
-      </div>
-    </div>
+      <!-- 7. Customized Date Picker Calendar Modal -->
+      <div id="datepicker-modal" class="absolute inset-0 bg-black/60 z-50 transition-opacity duration-300 opacity-0 pointer-events-none flex flex-col justify-end">
+        <div id="datepicker-content" class="w-full bg-stone-50 dark:bg-[#121814] rounded-t-[32px] max-h-[90%] flex flex-col translate-y-full transition-transform duration-300 overflow-hidden border-t border-stone-200 dark:border-stone-850">
+          <div class="w-10 h-1 bg-stone-300 dark:bg-stone-700 rounded-full mx-auto my-3 shrink-0"></div>
+          
+          <div class="px-5 py-2 border-b border-stone-200/50 dark:border-stone-800/80 flex justify-between items-center bg-stone-50 dark:bg-[#121814]">
+            <div class="space-y-1">
+              <h2 class="text-xs font-black text-stone-400 dark:text-stone-500 uppercase tracking-wider block">📅 관람 일정 선택</h2>
+              <h3 id="datepicker-title" class="text-[11px] font-black text-forest-800 dark:text-stone-100 line-clamp-1">전시회 상세 제목</h3>
+            </div>
+            <button id="btn-close-datepicker" class="text-xl text-stone-400 dark:text-stone-500 font-bold hover:text-stone-700 w-8 h-8 rounded-full flex items-center justify-center shrink-0">&times;</button>
+          </div>
 
-    <div class="modal-footer">
-      <button id="modal-toggle-save" class="modal-btn primary">💙 내 캘린더 저장</button>
-      <button id="modal-view-source" class="modal-btn secondary">🔗 공식 사이트 보기</button>
+          <div class="flex-1 overflow-y-auto p-5 space-y-4 no-scrollbar bg-stone-50 dark:bg-[#121814] text-xs">
+            <div class="text-[10px] text-stone-400 dark:text-stone-500 font-bold select-none text-center">
+              ⚠️ 해당 전시의 기간 (<span id="datepicker-range-text">기간</span>) 내에서만 선택할 수 있습니다.
+            </div>
+
+            <!-- Date Picker Calendar -->
+            <div class="bg-white dark:bg-[#18201a] border border-stone-200/50 dark:border-stone-800/60 p-4.5 rounded-2xl shadow-sm space-y-4 max-w-sm mx-auto">
+              <!-- Calendar Navigation -->
+              <div class="flex justify-between items-center select-none">
+                <button id="btn-datepicker-prev" class="w-7 h-7 flex items-center justify-center font-bold text-sm bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 rounded-full hover:bg-stone-200 hover:text-stone-850 transition-colors">◀</button>
+                <span id="datepicker-month-year" class="font-extrabold text-stone-850 dark:text-stone-200">2026년 10월</span>
+                <button id="btn-datepicker-next" class="w-7 h-7 flex items-center justify-center font-bold text-sm bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 rounded-full hover:bg-stone-200 hover:text-stone-850 transition-colors">▶</button>
+              </div>
+
+              <!-- Day of week headers -->
+              <div class="grid grid-cols-7 text-center font-extrabold text-[9px] text-stone-400 dark:text-stone-500 select-none">
+                <span class="text-red-500">일</span>
+                <span>월</span>
+                <span>화</span>
+                <span>수</span>
+                <span>목</span>
+                <span>금</span>
+                <span class="text-blue-500">토</span>
+              </div>
+
+              <!-- Days Grid -->
+              <div id="datepicker-days-grid" class="grid grid-cols-7 gap-y-2.5 gap-x-1.5 text-center text-[10px]">
+                <!-- Filled dynamically by JavaScript -->
+              </div>
+            </div>
+
+            <!-- Selected Dates Summary -->
+            <div class="space-y-1 bg-stone-100/50 dark:bg-[#18201a]/40 p-4.5 rounded-2xl border border-stone-200/30 dark:border-stone-800/50 max-w-sm mx-auto">
+              <span class="text-stone-400 dark:text-stone-500 font-bold text-[9px] uppercase tracking-wider block">선택한 관람 날짜 (<span id="datepicker-selected-count">0</span>개)</span>
+              <div id="datepicker-selected-list" class="flex flex-wrap gap-1.5 pt-1.5">
+                <span class="text-[9px] font-bold text-stone-400 select-none">날짜를 달력에서 클릭해 주세요.</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="p-4 bg-stone-100 dark:bg-[#141b16] border-t border-stone-200 dark:border-stone-850 flex gap-2">
+            <button id="btn-datepicker-clear" class="flex-1 clay-button-secondary py-3.5 text-xs font-bold rounded-2xl select-none">전체 취소</button>
+            <button id="btn-datepicker-save" class="flex-[1.5] clay-button py-3.5 text-xs font-bold rounded-2xl select-none">일정 확정</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 8. Dynamic Floating Toast Message -->
+      <div id="toast" class="fixed sm:absolute bottom-20 left-1/2 -translate-x-1/2 z-50 bg-stone-900/90 text-white text-xs font-bold px-4 py-2.5 rounded-full shadow-lg pointer-events-none opacity-0 flex items-center gap-1.5 transition-opacity duration-300">
+        <span>✨</span>
+        <span id="toast-text">메시지</span>
+      </div>
+
     </div>
   </div>
 
   <!-- Scripts -->
-  <script src="js/storage.js"></script>
-  <script src="js/filters.js"></script>
-  <script src="js/api.js"></script>
-  <script src="js/map.js"></script>
-  <script src="js/app.js"></script>
+  <script>
+    // -------------------------------------------------------------
+    // Global Constants & State
+    // -------------------------------------------------------------
+    const STORAGE_KEY = 'art_compass_saved_exhibitions';
+    
+    // Administrative Regions Grid Layout setup for South Korea Map
+    const REGION_GRID = [
+      { id: 'gangwon', name: '강원', col: 3, row: 0 },
+      
+      { id: 'incheon', name: '인천', col: 0, row: 1 },
+      { id: 'seoul', name: '서울', col: 1, row: 1 },
+      { id: 'gyeonggi', name: '경기', col: 2, row: 1 },
+      
+      { id: 'chungnam', name: '충남', col: 0, row: 2 },
+      { id: 'sejong', name: '세종', col: 1, row: 2 },
+      { id: 'chungbuk', name: '충북', col: 2, row: 2 },
+      { id: 'gyeongbuk', name: '경북', col: 3, row: 2 },
+      
+      { id: 'jeonbuk', name: '전북', col: 0, row: 3 },
+      { id: 'daejeon', name: '대전', col: 1, row: 3 },
+      { id: 'daegu', name: '대구', col: 2, row: 3 },
+      { id: 'ulsan', name: '울산', col: 3, row: 3 },
+      
+      { id: 'jeonnam', name: '전남', col: 0, row: 4 },
+      { id: 'gwangju', name: '광주', col: 1, row: 4 },
+      { id: 'gyeongnam', name: '경남', col: 2, row: 4 },
+      { id: 'busan', name: '부산', col: 3, row: 4 },
+      
+      { id: 'jeju', name: '제주', col: 1, row: 5 }
+    ];
+
+    // Build dynamically calculated dates for fallbacks to prevent "expired" indicators
+    const todayDate = new Date();
+    const formatDateStr = (d) => d.toISOString().split('T')[0];
+    const stripHtml = (html) => {
+      if (!html) return '';
+      return html.replace(/<[^>]*>/g, '')
+                 .replace(/&nbsp;/gi, ' ')
+                 .replace(/&lt;/gi, '<')
+                 .replace(/&gt;/gi, '>')
+                 .replace(/&amp;/gi, '&')
+                 .trim();
+    };
+    const offsetDay = (days) => {
+      const copy = new Date(todayDate);
+      copy.setDate(todayDate.getDate() + days);
+      return formatDateStr(copy);
+    };
+
+    // Coordinates mapping DB for major regions, districts, and venues
+    const COORDINATES_DB = {
+      // Major Regions (Provinces)
+      '서울': [37.5665, 126.9780],
+      '경기': [37.2752, 127.0095],
+      '강원': [37.8854, 127.7298],
+      '인천': [37.4563, 126.7052],
+      '충북': [36.6356, 127.4914],
+      '충남': [36.6588, 126.6728],
+      '대전': [36.3504, 127.3845],
+      '세종': [36.4801, 127.2890],
+      '경북': [36.5760, 128.5056],
+      '전북': [35.8206, 127.1087],
+      '대구': [35.8711, 128.6014],
+      '울산': [35.5389, 129.3114],
+      '광주': [35.1595, 126.8526],
+      '전남': [34.8161, 126.4629],
+      '경남': [35.2376, 128.6924],
+      '부산': [35.1796, 129.0756],
+      '제주': [33.4996, 126.5312],
+
+      // Seoul 25 Districts (Region + District)
+      '서울 종로구': [37.5730, 126.9790],
+      '서울 중구': [37.5636, 126.9976],
+      '서울 용산구': [37.5323, 126.9907],
+      '서울 성동구': [37.5634, 127.0369],
+      '서울 광진구': [37.5386, 127.0826],
+      '서울 동대문구': [37.5744, 127.0397],
+      '서울 중랑구': [37.6063, 127.0926],
+      '서울 성북구': [37.5894, 127.0167],
+      '서울 강북구': [37.6398, 127.0255],
+      '서울 도봉구': [37.6687, 127.0471],
+      '서울 노원구': [37.6542, 127.0565],
+      '서울 은평구': [37.6021, 126.9291],
+      '서울 서대문구': [37.5792, 126.9368],
+      '서울 마포구': [37.5622, 126.9083],
+      '서울 양천구': [37.5170, 126.8665],
+      '서울 강서구': [37.5509, 126.8497],
+      '서울 구로구': [37.4954, 126.8874],
+      '서울 금천구': [37.4570, 126.8957],
+      '서울 영등포구': [37.5264, 126.8962],
+      '서울 동작구': [37.5029, 126.9393],
+      '서울 관악구': [37.4782, 126.9515],
+      '서울 서초구': [37.4836, 127.0327],
+      '서울 강남구': [37.5173, 127.0473],
+      '서울 송파구': [37.5145, 127.1059],
+      '서울 강동구': [37.5301, 127.1238],
+
+      // Gyeonggi Major Cities
+      '경기 수원시': [37.2636, 127.0286],
+      '경기 성남시': [37.4201, 127.1265],
+      '경기 고양시': [37.6584, 126.8320],
+      '경기 용인시': [37.2411, 127.1776],
+      '경기 부천시': [37.5034, 126.7660],
+      '경기 안산시': [37.3219, 126.8309],
+      '경기 안양시': [37.3943, 126.9568],
+      '경기 남양주시': [37.6360, 127.2165],
+      '경기 화성시': [37.1995, 126.8314],
+      '경기 평택시': [36.9922, 127.1129],
+      '경기 의정부시': [37.7381, 127.0337],
+      '경기 파주시': [37.7600, 126.7798],
+      '경기 시흥시': [37.3801, 126.8026],
+      '경기 김포시': [37.6153, 126.7156],
+      '경기 광명시': [37.4785, 126.8643],
+      '경기 광주시': [37.4294, 127.2551],
+      '경기 군포시': [37.3617, 126.9353],
+      '경기 오산시': [37.1500, 127.0772],
+      '경기 이천시': [37.2723, 127.4419],
+      '경기 양주시': [37.8140, 127.0454],
+      '경기 안성시': [37.0080, 127.2798],
+      '경기 구리시': [37.5943, 127.1296],
+      '경기 포천시': [37.8949, 127.2003],
+      '경기 의왕시': [37.3448, 126.9683],
+      '경기 하남시': [37.5393, 127.2148],
+      '경기 여주시': [37.2982, 127.6372],
+      '경기 동두천시': [37.9036, 127.0548],
+      '경기 과천시': [37.4292, 126.9877],
+
+      // Busan Districts
+      '부산 해운대구': [35.1631, 129.1636],
+      '부산 금정구': [35.2359, 129.0915],
+      '부산 부산진구': [35.1601, 129.0526],
+      '부산 동래구': [35.2048, 129.0863],
+      '부산 수영구': [35.1456, 129.1132],
+      '부산 사상구': [35.1526, 128.9904],
+      '부산 연제구': [35.1765, 129.0795],
+      '부산 남구': [35.1264, 129.0838],
+      '부산 영도구': [35.0805, 129.0683],
+      '부산 중구': [35.1062, 129.0324],
+      '부산 서구': [35.0979, 129.0243],
+      '부산 동구': [35.1293, 129.0453],
+      '부산 북구': [35.2104, 129.0116],
+      '부산 강서구': [35.1598, 128.9803],
+      '부산 기장군': [35.2442, 129.2131],
+    };
+
+    const getExhibitionCoords = (ex) => {
+      const venue = ex.venue || '';
+      if (venue.includes('국립현대미술관 서울관') || venue === '국립현대미술관') return [37.5786, 126.9797];
+      if (venue.includes('서울시립미술관')) return [37.5641, 126.9738];
+      if (venue.includes('부산시립미술관')) return [35.1672, 129.1381];
+      if (venue.includes('경기도자박물관')) return [37.3621, 127.3657];
+      if (venue.includes('대구미술관')) return [35.8239, 128.6782];
+      if (venue.includes('예술의전당')) return [37.4785, 127.0118];
+      if (venue.includes('세종문화회관')) return [37.5726, 126.9760];
+      if (venue.includes('국립극장')) return [37.5457, 126.9996];
+
+      const districtKey = `${ex.region || ''} ${ex.district || ''}`.trim();
+      if (COORDINATES_DB[districtKey]) return COORDINATES_DB[districtKey];
+
+      if (ex.region === '경기' && ex.district) {
+        const cityOnly = ex.district.split(' ')[0];
+        const cityKey = `경기 ${cityOnly}`;
+        if (COORDINATES_DB[cityKey]) return COORDINATES_DB[cityKey];
+      }
+
+      if (COORDINATES_DB[ex.region]) return COORDINATES_DB[ex.region];
+
+      return [36.3504, 127.3845];
+    };
+
+    // Static 5 Signature museum fallback exhibitions DB
+    const FALLBACK_EXHIBITIONS = [
+      {
+        id: 'fallback-01',
+        title: '국립현대미술관 서울관 《백희나 그림책 특별 특별전》',
+        venue: '국립현대미술관 서울관',
+        region: '서울',
+        district: '종로구',
+        startDate: offsetDay(-10),
+        endDate: offsetDay(60),
+        priceType: 'free',
+        priceText: '무료 (상설 및 기획전시 무료)',
+        category: '미술',
+        description: '아동 그림책의 한 획을 그은 백희나 작가의 원화 및 입체 조형 특별 기획전. 「구름빵」, 「알사탕」 등 대표 애니메이션 세트를 고해상도 현실 조형물로 직접 체험할 수 있어 연인 및 가족 단위 추천.',
+        address: '서울특별시 종로구 삼청로 30',
+        sourceName: '국립현대미술관 대표자료',
+        sourceUrl: 'https://www.mmca.go.kr',
+        isCultureDay: false,
+        lastUpdated: formatDateStr(todayDate)
+      },
+      {
+        id: 'fallback-02',
+        title: '서울시립미술관 서소문본관 《에드워드 호퍼: 길 위에서》',
+        venue: '서울시립미술관 서소문본관',
+        region: '서울',
+        district: '중구',
+        startDate: offsetDay(-20),
+        endDate: offsetDay(25),
+        priceType: 'discount',
+        priceText: '15,000원 (매월 마지막 주 수요일 문화가 있는 날 50% 현장 할인)',
+        category: '미술',
+        description: '20세기 현대 미국인의 고독을 담아낸 거장 에드워드 호퍼의 드로잉, 회화, 아카이브 대규모 연합 기획 회고전. 뉴욕 휘트니 미술관 소장 유명 유화 원작 다수 포함.',
+        address: '서울특별시 중구 미술관길 30',
+        sourceName: '서울시립미술관 정보',
+        sourceUrl: 'https://sema.seoul.go.kr',
+        isCultureDay: true,
+        lastUpdated: formatDateStr(todayDate)
+      },
+      {
+        id: 'fallback-03',
+        title: '부산시립미술관 《무라카미 다카시: 무라카미좀비》',
+        venue: '부산시립미술관',
+        region: '부산',
+        district: '해운대구',
+        startDate: offsetDay(-45),
+        endDate: offsetDay(3), // Ending soon!
+        priceType: 'free',
+        priceText: '무료',
+        category: '미술',
+        description: '동시대 서브컬처와 대중문화를 독특한 시각으로 승화시킨 무라카미 다카시의 좀비 회화, 도자 조형물, 그리고 시그니처 플라워 볼 특별 기획전. 마감 임박 전시.',
+        address: '부산광역시 해운대구 APEC로 58',
+        sourceName: '부산시립미술관 자료실',
+        sourceUrl: 'https://art.busan.go.kr',
+        isCultureDay: false,
+        lastUpdated: formatDateStr(todayDate)
+      },
+      {
+        id: 'fallback-04',
+        title: '경기도자박물관 《한국 현대 도자 기획 특별전》',
+        venue: '경기도자박물관',
+        region: '경기',
+        district: '광주시',
+        startDate: offsetDay(-5),
+        endDate: offsetDay(20),
+        priceType: 'paid',
+        priceText: '3,000원 (경기도민 신분증 제시 시 50% 현장 감면)',
+        category: '공예',
+        description: '전통 청자와 백자의 예술성을 오늘날 현대 조형 도예로 계승하는 저명 현대 도예 작가 20인의 합작품 전시. 야외 조형 공원과 전통 가마터 산책코스 연계 가능.',
+        address: '경기도 광주시 곤지암읍 경충대로 727',
+        sourceName: '한국문화정보원 공공데이터',
+        sourceUrl: 'https://www.kocef.org',
+        isCultureDay: false,
+        lastUpdated: formatDateStr(todayDate)
+      },
+      {
+        id: 'fallback-05',
+        title: '대구미술관 《이건희 컬렉션 한국근현대미술 특별 명작전》',
+        venue: '대구미술관',
+        region: '대구',
+        district: '수성구',
+        startDate: offsetDay(-15),
+        endDate: offsetDay(40),
+        priceType: 'paid',
+        priceText: '1,000원 (문화가 있는 날 무료입장 가능)',
+        category: '미술',
+        description: '고 이건희 회장 기증 명작 특별 지방 순회 기획 전시. 한국 근현대 미술의 황금기를 대표하는 이중섭, 김환기, 박수근, 천경자, 장욱진 등의 전설적인 명화 총망라.',
+        address: '대구광역시 수성구 미술관로 40',
+        sourceName: '대구시 열린 시립미술관',
+        sourceUrl: 'https://daeguartmuseum.or.kr',
+        isCultureDay: true,
+        lastUpdated: formatDateStr(todayDate)
+      },
+      {
+        id: 'fallback-06',
+        title: '사운드베리 페스타 26 (Soundberry Festa \'26)',
+        venue: 'KBS아레나',
+        region: '서울',
+        district: '강서구',
+        startDate: offsetDay(5),
+        endDate: offsetDay(6),
+        priceType: 'paid',
+        priceText: '110,000원 (전석 스탠딩)',
+        category: '콘서트',
+        description: '달콤한 음악과 시원한 실내 페스티벌의 완벽한 조화! 10cm, 최유리, 스텔라장, 적재, 페퍼톤스 등 대한민국 대표 감성 싱어송라이터와 밴드가 총출동하는 대표 가요/인디 콘서트 페스티벌.',
+        address: '서울특별시 강서구 공항대로 376',
+        sourceName: '자체 큐레이션 라이브러리',
+        sourceUrl: 'https://www.soundberry.co.kr',
+        isCultureDay: false,
+        lastUpdated: formatDateStr(todayDate)
+      },
+      {
+        id: 'fallback-07',
+        title: '콜드플레이 내한공연 《Music of the Spheres World Tour》',
+        venue: '고양종합운동장',
+        region: '경기',
+        district: '고양시',
+        startDate: offsetDay(15),
+        endDate: offsetDay(17),
+        priceType: 'paid',
+        priceText: '99,000원 ~ 250,000원 (현대카드 결제 시 20% 청구 할인)',
+        category: '콘서트',
+        description: '영국 국민 밴드 콜드플레이(Coldplay)의 역대급 스케일 단독 내한 콘서트! 주옥같은 명곡들(Yellow, Viva La Vida, Fix You)과 화려한 발광 팔찌(Xyloband) 레이저 쇼가 수놓는 초대형 밤하늘 우주 축제.',
+        address: '경기도 고양시 일산서구 중앙로 1601',
+        sourceName: '자체 큐레이션 라이브러리',
+        sourceUrl: 'https://www.livenation.kr',
+        isCultureDay: false,
+        lastUpdated: formatDateStr(todayDate)
+      },
+      {
+        id: 'fallback-08',
+        title: '찰리 푸스 내한 라이브 콘서트 (Charlie Puth Live in Seoul)',
+        venue: 'KSPO DOME (올림픽체조경기장)',
+        region: '서울',
+        district: '송파구',
+        startDate: offsetDay(30),
+        endDate: offsetDay(31),
+        priceType: 'paid',
+        priceText: '88,000원 ~ 165,000원',
+        category: '콘서트',
+        description: '천재 싱어송라이터 찰리 푸스의 세 번째 단독 라이브 콘서트. 완벽한 음정과 폭발적인 가창력으로 "Attention", "We Don\'t Talk Anymore", "Left and Right" 등 전 세계 음원 차트를 휩쓴 팝송 퍼레이드를 선보입니다.',
+        address: '서울특별시 송파구 올림픽로 424',
+        sourceName: '자체 큐레이션 라이브러리',
+        sourceUrl: 'https://www.yes24.com',
+        isCultureDay: false,
+        lastUpdated: formatDateStr(todayDate)
+      },
+      {
+        id: 'fallback-09',
+        title: '임영웅 전국투어 콘서트 《IM HERO TOUR 2026》',
+        venue: '서울월드컵경기장',
+        region: '서울',
+        district: '마포구',
+        startDate: offsetDay(40),
+        endDate: offsetDay(42),
+        priceType: 'paid',
+        priceText: '99,000원 ~ 187,000원',
+        category: '콘서트',
+        description: '전 세대를 아우르는 명품 보컬 임영웅의 상암 벌 단독 콘서트! 가슴을 울리는 트로트 메들리부터 감성 팝, 웅장한 오케스트라 사운드와 함께하는 하늘빛 물결의 최고 존엄 국내 콘서트.',
+        address: '서울특별시 마포구 성산동 515',
+        sourceName: '자체 큐레이션 라이브러리',
+        sourceUrl: 'https://ticket.interpark.com',
+        isCultureDay: false,
+        lastUpdated: formatDateStr(todayDate)
+      },
+      {
+        id: 'fallback-10',
+        title: '데이식스 단독 콘서트 《DAY6 WELCOME TO THE SHOW》',
+        venue: '인스파이어 아레나',
+        region: '인천',
+        district: '중구',
+        startDate: offsetDay(12),
+        endDate: offsetDay(14),
+        priceType: 'paid',
+        priceText: '154,000원 (전석 동일가)',
+        category: '콘서트',
+        description: '청춘을 노래하는 믿고 듣는 대세 밴드 DAY6(데이식스)의 아레나 공연! "한 페이지가 될 수 있게", "예뻤어", "Welcome to the Show" 등 관객 전원의 떼창과 뜨거운 에너지로 가득 찰 명품 국내 밴드 콘서트.',
+        address: '인천광역시 중구 공항문화로 127',
+        sourceName: '자체 큐레이션 라이브러리',
+        sourceUrl: 'https://www.yes24.com',
+        isCultureDay: false,
+        lastUpdated: formatDateStr(todayDate)
+      },
+      {
+        id: 'fallback-11',
+        title: '대학로 인기 1위 연극 《옥탑방고양이》',
+        venue: '틴틴홀',
+        region: '서울',
+        district: '종로구',
+        startDate: offsetDay(-5),
+        endDate: offsetDay(90),
+        priceType: 'discount',
+        priceText: '15,005원 ~ 35,000원 (평일 퇴근길 할인 40% 적용)',
+        category: '연극',
+        description: '11년 연속 대학로 연극 예매율 1위를 지켜온 대한민국 대표 로맨틱 코미디 연극. 옥탑방 하나를 둘러싼 청춘남녀의 솔직 발랄하고 유쾌한 동거 에피소드.',
+        address: '서울특별시 종로구 대학로10길 24',
+        sourceName: '대학로 연극 아카이브',
+        sourceUrl: 'https://ticket.interpark.com',
+        isCultureDay: true,
+        lastUpdated: formatDateStr(todayDate)
+      },
+      {
+        id: 'fallback-12',
+        title: '뮤지컬 월드 마스터피스 《지킬앤하이드 (Jekyll & Hyde)》',
+        venue: '샤롯데씨어터',
+        region: '서울',
+        district: '송파구',
+        startDate: offsetDay(8),
+        endDate: offsetDay(45),
+        priceType: 'paid',
+        priceText: '80,000원 ~ 170,000원 (화/수 마티네 낮 공연 20% 현장 할인)',
+        category: '뮤지컬',
+        description: '인간의 내면에 공존하는 선과 악의 갈등을 장엄하게 풀어낸 최고의 뮤지컬 대작. 폭발적인 가창력이 돋보이는 불후의 넘버 "지금 이 순간(This is the moment)"이 울려 퍼집니다.',
+        address: '서울특별시 송파구 올림픽로 240',
+        sourceName: '샤롯데씨어터 홈페이지',
+        sourceUrl: 'https://www.charlottetheatre.co.kr',
+        isCultureDay: false,
+        lastUpdated: formatDateStr(todayDate)
+      }
+    ];
+
+    // Local State Manager
+    const state = {
+      activeTab: 'exhibitions', // 'exhibitions' | 'calendar'
+      viewMode: 'card', // 'card' | 'list'
+      exhibitions: [],
+      filteredExhibitions: [],
+      savedExhibitions: [],
+      selectedRegion: '전체',
+      searchQuery: '',
+      priceFilter: 'all', // 'all' | 'free' | 'culture'
+      dateFilter: 'all',  // 'all' | 'ongoing' | 'weekend' | 'month' | 'ending' | 'upcoming'
+      sortBy: 'endingSoon',
+      categoryFilter: 'all', // 'all' | '전시' | '공연' | '콘서트'
+      concertArtistFilter: 'all', // 'all' | 'domestic' | 'foreign'
+      selectedExhibitionId: null,
+      apiConfig: {
+        kcisaKey: '',
+        seoulKey: '',
+        kopisKey: '',
+        endpointType: 'korea',
+        proxyServer: 'allorigins'
+      },
+      dataSource: 'fallback' // 'fallback' | 'live'
+    };
+
+    // DOM selectors
+    const DOM = {
+      navExhibitions: document.getElementById('nav-btn-exhibitions'),
+      navCalendar: document.getElementById('nav-btn-calendar'),
+      tabExhibitionsSection: document.getElementById('tab-exhibitions'),
+      tabCalendarSection: document.getElementById('tab-calendar'),
+      
+      themeToggle: document.getElementById('theme-toggle'),
+      btnOpenSettings: document.getElementById('btn-open-settings'),
+      btnCloseSettings: document.getElementById('btn-close-settings'),
+      btnSaveSettings: document.getElementById('btn-save-settings'),
+      btnResetKeys: document.getElementById('btn-reset-keys'),
+      settingsDrawer: document.getElementById('settings-drawer'),
+      settingsContent: document.getElementById('settings-content'),
+      
+      inputKcisaKey: document.getElementById('input-kcisa-key'),
+      inputSeoulKey: document.getElementById('input-seoul-key'),
+      inputKopisKey: document.getElementById('input-kopis-key'),
+      selectEndpoint: document.getElementById('select-endpoint'),
+      selectProxy: document.getElementById('select-proxy'),
+      kcisaKeyStatus: document.getElementById('kcisa-key-status'),
+      seoulKeyStatus: document.getElementById('seoul-key-status'),
+      kopisKeyStatus: document.getElementById('kopis-key-status'),
+
+      noticeBanner: document.getElementById('notice-banner'),
+      bannerText: document.getElementById('banner-text'),
+      btnCloseBanner: document.getElementById('btn-close-banner'),
+
+      mapGridContainer: document.getElementById('map-grid-container'),
+      btnResetRegion: document.getElementById('btn-reset-region'),
+      
+      searchInput: document.getElementById('search-input'),
+      sortSelect: document.getElementById('sort-select'),
+      btnViewCard: document.getElementById('btn-view-card'),
+      btnViewList: document.getElementById('btn-view-list'),
+      btnViewMapOpt: document.getElementById('btn-view-map-opt'),
+      exhibitionStats: document.getElementById('exhibition-stats'),
+      exhibitionsContainer: document.getElementById('exhibition-cards-container'),
+      priceFilters: document.querySelectorAll('.btn-price-filter'),
+      dateFilters: document.querySelectorAll('.btn-date-filter'),
+      categoryFilters: document.querySelectorAll('.btn-category-filter'),
+      concertFilters: document.querySelectorAll('.btn-concert-filter'),
+      concertSubfilterWrapper: document.getElementById('concert-subfilter-wrapper'),
+
+      // Calendar components
+      gaugeProgress: document.getElementById('gauge-progress'),
+      gaugeCostDisplay: document.getElementById('gauge-cost-display'),
+      gaugeBadge: document.getElementById('gauge-badge'),
+      gaugeAdviceText: document.getElementById('gauge-advice-text'),
+      routeAnalysisBox: document.getElementById('route-analysis-box'),
+      summaryCostTxt: document.getElementById('summary-cost-txt'),
+      btnClearCalendar: document.getElementById('btn-clear-calendar'),
+      calendarTimelineContainer: document.getElementById('calendar-timeline-container'),
+      calendarCountBadge: document.getElementById('calendar-count-badge'),
+
+      // Details Modal components
+      detailsModal: document.getElementById('details-modal'),
+      detailsContent: document.getElementById('details-content'),
+      btnCloseDetails: document.getElementById('btn-close-details'),
+      modalBadges: document.getElementById('modal-badges'),
+      modalTitle: document.getElementById('modal-title'),
+      modalVenue: document.getElementById('modal-venue'),
+      modalAddress: document.getElementById('modal-address'),
+      modalDates: document.getElementById('modal-dates'),
+      modalPrice: document.getElementById('modal-price'),
+      modalDescription: document.getElementById('modal-description'),
+      modalSource: document.getElementById('modal-source'),
+      modalUpdated: document.getElementById('modal-updated'),
+      modalBtnSource: document.getElementById('modal-btn-source'),
+      modalBtnSave: document.getElementById('modal-btn-save'),
+
+      toast: document.getElementById('toast'),
+      toastText: document.getElementById('toast-text'),
+
+      // Date Picker components
+      datepickerModal: document.getElementById('datepicker-modal'),
+      datepickerTitle: document.getElementById('datepicker-title'),
+      datepickerRangeText: document.getElementById('datepicker-range-text'),
+      datepickerDaysGrid: document.getElementById('datepicker-days-grid'),
+      datepickerMonthYear: document.getElementById('datepicker-month-year'),
+      datepickerSelectedCount: document.getElementById('datepicker-selected-count'),
+      datepickerSelectedList: document.getElementById('datepicker-selected-list'),
+      btnCloseDatepicker: document.getElementById('btn-close-datepicker'),
+      btnDatepickerPrev: document.getElementById('btn-datepicker-prev'),
+      btnDatepickerNext: document.getElementById('btn-datepicker-next'),
+      btnDatepickerClear: document.getElementById('btn-datepicker-clear'),
+      btnDatepickerSave: document.getElementById('btn-datepicker-save')
+    };
+
+    // -------------------------------------------------------------
+    // Core Date & Math Logic (Cost Parser & Weekend check)
+    // -------------------------------------------------------------
+    function getThisWeekendRange() {
+      const today = new Date(todayDate);
+      const day = today.getDay(); // 0 (Sun) to 6 (Sat)
+      const diffToSaturday = 6 - (day === 0 ? 7 : day);
+      
+      const sat = new Date(today);
+      sat.setDate(today.getDate() + diffToSaturday);
+      sat.setHours(0, 0, 0, 0);
+      
+      const sun = new Date(sat);
+      sun.setDate(sat.getDate() + 1);
+      sun.setHours(23, 59, 59, 999);
+      
+      return { start: sat, end: sun };
+    }
+
+    function isExhibitionOnThisWeekend(ex) {
+      try {
+        const { start: sat, end: sun } = getThisWeekendRange();
+        const exStart = new Date(ex.startDate);
+        const exEnd = new Date(ex.endDate);
+        exStart.setHours(0, 0, 0, 0);
+        exEnd.setHours(23, 59, 59, 999);
+        return exStart <= sun && exEnd >= sat;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function parseExhibitionCost(ex) {
+      if (ex.priceType === 'free' || !ex.priceType) {
+        return { amount: 0, label: '무료', isExact: true, priceType: 'free' };
+      }
+      if (ex.priceType === 'discount') {
+        return { amount: 0, label: '할인 적용 (현장 지참 확인)', isExact: false, priceType: 'discount' };
+      }
+      if (ex.priceType === 'paid') {
+        const cleaned = (ex.priceText || '').replace(/,/g, '');
+        const match = cleaned.match(/\d+/);
+        if (match) {
+          const amount = parseInt(match[0], 10);
+          return { amount, label: `${amount.toLocaleString()}원`, isExact: true, priceType: 'paid' };
+        }
+        return { amount: 0, label: ex.priceText || '유료', isExact: false, priceType: 'paid' };
+      }
+      return { amount: 0, label: ex.priceText || '가격 정보 없음', isExact: false, priceType: 'unknown' };
+    }
+
+    function cleanApiKey(key) {
+      if (!key) return '';
+      let decoded = key.trim();
+      let prev;
+      try {
+        do {
+          prev = decoded;
+          decoded = decodeURIComponent(decoded);
+        } while (decoded !== prev);
+      } catch (e) {}
+      return decoded;
+    }
+
+    function determinePriceType(chargeText) {
+      if (!chargeText) return 'unknown';
+      const txt = chargeText.toLowerCase();
+      if (txt.includes('무료') || txt.includes('free') || txt === '0') return 'free';
+      if (txt.includes('할인') || txt.includes('우대') || txt.includes('감면') || txt.includes('문화가 있는 날')) return 'discount';
+      if (txt.includes('원') || txt.match(/\d+/)) return 'paid';
+      return 'unknown';
+    }
+
+    function parseAddress(address) {
+      if (!address) return { region: '서울', district: '기타' };
+      const parts = address.trim().split(/\s+/);
+      if (parts.length === 0) return { region: '서울', district: '기타' };
+      
+      const rawRegion = parts[0];
+      const district = parts[1] || '';
+      let region = '서울';
+      
+      if (rawRegion.includes('서울')) region = '서울';
+      else if (rawRegion.includes('경기')) region = '경기';
+      else if (rawRegion.includes('인천')) region = '인천';
+      else if (rawRegion.includes('부산')) region = '부산';
+      else if (rawRegion.includes('대구')) region = '대구';
+      else if (rawRegion.includes('광주')) region = '광주';
+      else if (rawRegion.includes('대전')) region = '대전';
+      else if (rawRegion.includes('울산')) region = '울산';
+      else if (rawRegion.includes('세종')) region = '세종';
+      else if (rawRegion.includes('강원')) region = '강원';
+      else if (rawRegion.includes('충북') || rawRegion.includes('충청북도')) region = '충북';
+      else if (rawRegion.includes('충남') || rawRegion.includes('충청남도')) region = '충남';
+      else if (rawRegion.includes('전북') || rawRegion.includes('전라북도')) region = '전북';
+      else if (rawRegion.includes('전남') || rawRegion.includes('전라남도')) region = '전남';
+      else if (rawRegion.includes('경북') || rawRegion.includes('경상북도')) region = '경북';
+      else if (rawRegion.includes('경남') || rawRegion.includes('경상남도')) region = '경남';
+      else if (rawRegion.includes('제주')) region = '제주';
+      
+      return { region, district };
+    }
+
+    function formatToYmd(dateStr) {
+      if (!dateStr) return '';
+      const cleaned = dateStr.replace(/[^0-9]/g, '');
+      if (cleaned.length === 8) {
+        return `${cleaned.substring(0, 4)}-${cleaned.substring(4, 6)}-${cleaned.substring(6, 8)}`;
+      }
+      try {
+        const d = new Date(dateStr);
+        if (!isNaN(d.getTime())) {
+          return d.toISOString().split('T')[0];
+        }
+      } catch (e) {}
+      return dateStr;
+    }
+
+    // -------------------------------------------------------------
+    // Live API & CORS Handler
+    // -------------------------------------------------------------
+    function wrapWithProxy(url, proxyType) {
+      if (!proxyType || proxyType === 'none') return url;
+      const encodedUrl = encodeURIComponent(url);
+      if (proxyType === 'corsproxy') {
+        return `https://corsproxy.io/?${url}`;
+      } else if (proxyType === 'allorigins') {
+        return `https://api.allorigins.win/raw?url=${encodedUrl}`;
+      } else if (proxyType === 'thingproxy') {
+        return `https://thingproxy.freeboard.io/fetch/${url}`;
+      }
+      return url;
+    }
+
+    async function fetchSingleSource(type, key, proxy) {
+      if (!key) return [];
+      
+      const today = new Date(todayDate);
+      const fromYmd = formatDateStr(new Date(today.getFullYear(), today.getMonth(), 1)).replace(/-/g, '');
+      const toYmd = formatDateStr(new Date(today.getFullYear(), today.getMonth() + 2, 0)).replace(/-/g, '');
+
+      let targetUrl = '';
+      const encodedKey = encodeURIComponent(key);
+
+      if (type === 'korea') {
+        targetUrl = `https://apis.data.go.kr/B553457/cultureinfo/period2?serviceKey=${encodedKey}&from=${fromYmd}&to=${toYmd}&pageNo=1&numOfRows=65&cpage=1&rows=65`;
+      } else if (type === 'seoul') {
+        targetUrl = `http://openapi.seoul.go.kr:8088/${encodedKey}/json/culturalEventInfo/1/65/%20/%20/%20/`;
+      } else if (type === 'kopis') {
+        targetUrl = `https://api.kcisa.kr/openapi/CNV_060/request?serviceKey=${encodedKey}&numOfRows=65&pageNo=1&dtype=&title=`;
+      }
+
+      const proxiedUrl = wrapWithProxy(targetUrl, proxy);
+      const response = await fetch(proxiedUrl);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      
+      let text = await response.text();
+      if (text.trim().startsWith('{')) {
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed.contents) text = parsed.contents;
+        } catch(e) {}
+      }
+
+      let normalized = [];
+      if (text.trim().startsWith('<')) {
+        normalized = parseXmlData(text, type);
+      } else {
+        normalized = parseJsonData(JSON.parse(text), type);
+      }
+      return normalized;
+    }
+
+    async function fetchFromApi() {
+      const cfg = state.apiConfig;
+      
+      if (cfg.endpointType === 'all') {
+        const promises = [];
+        const activeTypes = [];
+        
+        if (cfg.kcisaKey) {
+          promises.push(fetchSingleSource('korea', cfg.kcisaKey, cfg.proxyServer).catch(e => {
+            console.warn('KCISA fetch failed:', e);
+            return [];
+          }));
+          activeTypes.push('korea');
+        }
+        if (cfg.seoulKey) {
+          promises.push(fetchSingleSource('seoul', cfg.seoulKey, cfg.proxyServer).catch(e => {
+            console.warn('Seoul fetch failed:', e);
+            return [];
+          }));
+          activeTypes.push('seoul');
+        }
+        if (cfg.kopisKey) {
+          promises.push(fetchSingleSource('kopis', cfg.kopisKey, cfg.proxyServer).catch(e => {
+            console.warn('KOPIS fetch failed:', e);
+            return [];
+          }));
+          activeTypes.push('kopis');
+        }
+
+        if (promises.length === 0) {
+          state.dataSource = 'fallback';
+          return FALLBACK_EXHIBITIONS;
+        }
+
+        try {
+          const results = await Promise.all(promises);
+          let combined = results.flat();
+
+          if (combined.length > 0) {
+            state.dataSource = 'live';
+            const seen = new Set();
+            combined = combined.filter(item => {
+              const normTitle = item.title.replace(/\s+/g, '').toLowerCase();
+              if (seen.has(normTitle)) return false;
+              seen.add(normTitle);
+              return true;
+            });
+            return combined;
+          } else {
+            throw new Error('All active sources returned empty results');
+          }
+        } catch (err) {
+          console.error('All APIs failed. Fallback loaded:', err);
+          state.dataSource = 'fallback';
+          return FALLBACK_EXHIBITIONS;
+        }
+      } else {
+        let activeKey = '';
+        if (cfg.endpointType === 'korea') activeKey = cfg.kcisaKey;
+        else if (cfg.endpointType === 'seoul') activeKey = cfg.seoulKey;
+        else if (cfg.endpointType === 'kopis') activeKey = cfg.kopisKey;
+
+        if (!activeKey) {
+          state.dataSource = 'fallback';
+          return FALLBACK_EXHIBITIONS;
+        }
+
+        try {
+          const list = await fetchSingleSource(cfg.endpointType, activeKey, cfg.proxyServer);
+          if (list && list.length > 0) {
+            state.dataSource = 'live';
+            return list;
+          } else {
+            throw new Error('Empty list returned');
+          }
+        } catch (err) {
+          console.error('실시간 API 호출 실패, Fallback 적용:', err.message);
+          state.dataSource = 'fallback';
+          return FALLBACK_EXHIBITIONS;
+        }
+      }
+    }
+
+    async function testSingleApi(type, key, proxy) {
+      if (!key) return { status: 'empty', message: '⚪ API 키가 입력되지 않았습니다. (예시 데이터 가동)' };
+      
+      const today = new Date(todayDate);
+      const fromYmd = formatDateStr(today).replace(/-/g, '');
+      const toYmd = formatDateStr(today).replace(/-/g, '');
+      
+      try {
+        let url = '';
+        const encodedKey = encodeURIComponent(key);
+        if (type === 'korea') {
+          url = `https://apis.data.go.kr/B553457/cultureinfo/period2?serviceKey=${encodedKey}&from=${fromYmd}&to=${toYmd}&pageNo=1&numOfRows=1&cpage=1&rows=1`;
+        } else if (type === 'seoul') {
+          url = `http://openapi.seoul.go.kr:8088/${encodedKey}/json/culturalEventInfo/1/5/%20/%20/%20/`;
+        } else if (type === 'kopis') {
+          url = `https://api.kcisa.kr/openapi/CNV_060/request?serviceKey=${encodedKey}&numOfRows=1&pageNo=1&dtype=&title=`;
+        }
+
+        const proxied = wrapWithProxy(url, proxy);
+        const res = await fetch(proxied);
+        if (!res.ok) {
+          return { status: 'error', message: `🔴 인증 실패 (서버 응답 오류: ${res.status})` };
+        }
+        
+        let text = await res.text();
+        if (text.trim().startsWith('{')) {
+          try {
+            const parsed = JSON.parse(text);
+            if (parsed.contents) text = parsed.contents;
+          } catch(e) {}
+        }
+
+        const textLower = text.toLowerCase();
+
+        if (type === 'korea') {
+          if (text.includes('SERVICE_KEY_IS_NOT_REGISTERED_ERROR') || text.includes('SERVICE KEY IS NOT REGISTERED') || text.includes('인증오류') || text.includes('Invalid') || text.includes('RESOURCE_SENTINEL_ERROR') || text.includes('30</resultCode>')) {
+            return { status: 'error', message: '🔴 인증 실패 (인증키 미등록/오류)' };
+          }
+          if (text.includes('response') || text.includes('item') || text.includes('resultCode')) {
+            return { status: 'success', message: '🟢 연동 성공 (정상 호출 가능)' };
+          }
+        } else if (type === 'seoul') {
+          if (text.includes('INFO-100') || text.includes('인증키가 유효하지 않습니다') || text.includes('ERR-300') || text.includes('인증오류')) {
+            return { status: 'error', message: '🔴 인증 실패 (인증키 미등록/오류)' };
+          }
+          if (text.includes('culturalEventInfo') || text.includes('INFO-200') || text.includes('RESULT')) {
+            return { status: 'success', message: '🟢 연동 성공 (정상 호출 가능)' };
+          }
+        } else if (type === 'kopis') {
+          if (text.includes('인증되지 않은') || text.includes('인증오류') || text.includes('service') && text.includes('error') || text.includes('db') && text.includes('msg')) {
+            return { status: 'error', message: '🔴 인증 실패 (인증키 미등록/오류)' };
+          }
+          if (text.includes('db') || text.includes('mt20id')) {
+            return { status: 'success', message: '🟢 연동 성공 (정상 호출 가능)' };
+          }
+        }
+        
+        if (textLower.includes('error') || textLower.includes('fail') || textLower.includes('invalid') || textLower.includes('unauthorized')) {
+          return { status: 'error', message: '🔴 인증 실패 (인증키 또는 파라미터 에러)' };
+        }
+
+        return { status: 'success', message: '🟢 연동 성공 (정상 호출 가능)' };
+      } catch (err) {
+        return { status: 'error', message: '🔴 연결 실패 (CORS 차단 또는 네트워크 에러)' };
+      }
+    }
+
+    async function testAndShowApiKeysStatus() {
+      const cfg = state.apiConfig;
+      
+      const updateLabel = (domEl, statusObj) => {
+        domEl.textContent = statusObj.message;
+        if (statusObj.status === 'success') {
+          domEl.className = 'block text-[8px] text-emerald-600 dark:text-emerald-400 font-bold';
+        } else if (statusObj.status === 'error') {
+          domEl.className = 'block text-[8px] text-rose-500 font-bold';
+        } else if (statusObj.status === 'testing') {
+          domEl.className = 'block text-[8px] text-amber-500 font-bold animate-pulse';
+        } else {
+          domEl.className = 'block text-[8px] text-stone-400 font-medium';
+        }
+      };
+
+      if (cfg.kcisaKey) updateLabel(DOM.kcisaKeyStatus, { status: 'testing', message: '⏳ 연결 상태 확인 중...' });
+      else updateLabel(DOM.kcisaKeyStatus, { status: 'empty', message: '⚪ API 키가 입력되지 않았습니다. (예시 데이터 가동)' });
+
+      if (cfg.seoulKey) updateLabel(DOM.seoulKeyStatus, { status: 'testing', message: '⏳ 연결 상태 확인 중...' });
+      else updateLabel(DOM.seoulKeyStatus, { status: 'empty', message: '⚪ API 키가 입력되지 않았습니다. (예시 데이터 가동)' });
+
+      if (cfg.kopisKey) updateLabel(DOM.kopisKeyStatus, { status: 'testing', message: '⏳ 연결 상태 확인 중...' });
+      else updateLabel(DOM.kopisKeyStatus, { status: 'empty', message: '⚪ API 키가 입력되지 않았습니다. (예시 데이터 가동)' });
+
+      const promises = [];
+      if (cfg.kcisaKey) {
+        promises.push(testSingleApi('korea', cfg.kcisaKey, cfg.proxyServer).then(res => updateLabel(DOM.kcisaKeyStatus, res)));
+      }
+      if (cfg.seoulKey) {
+        promises.push(testSingleApi('seoul', cfg.seoulKey, cfg.proxyServer).then(res => updateLabel(DOM.seoulKeyStatus, res)));
+      }
+      if (cfg.kopisKey) {
+        promises.push(testSingleApi('kopis', cfg.kopisKey, cfg.proxyServer).then(res => updateLabel(DOM.kopisKeyStatus, res)));
+      }
+
+      await Promise.allSettled(promises);
+    }
+
+    function parseXmlData(xmlText, type) {
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+      const list = [];
+
+      if (type === 'kopis') {
+        const items = xmlDoc.getElementsByTagName('item');
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          const getVal = (tag) => {
+            const node = item.getElementsByTagName(tag)[0];
+            return node ? node.textContent || '' : '';
+          };
+          const title = getVal('title');
+          const category = getVal('type') || '전시';
+          const period = getVal('period') || '';
+          const dates = period.split('~');
+          const startDate = formatToYmd(dates[0] || '');
+          const endDate = formatToYmd(dates[1] || dates[0] || '');
+          
+          const venue = getVal('eventSite') || '문화공연장';
+          const { region, district } = parseAddress(venue);
+          const priceText = getVal('charge') || '무료';
+          const priceType = determinePriceType(priceText);
+          const description = stripHtml(getVal('description') || '상세 전시/공연 정보는 공식 사이트를 참고하시기 바랍니다.');
+          const sourceUrl = getVal('url') || '';
+          
+          list.push({
+            id: `kcisa-cnv060-${i}-${Date.now()}`,
+            title,
+            venue,
+            region,
+            district,
+            startDate,
+            endDate,
+            priceType,
+            priceText,
+            category,
+            description,
+            address: venue,
+            sourceName: '문화체육관광부 (문화포털)',
+            sourceUrl,
+            isCultureDay: title.includes('문화가 있는 날') || priceText.includes('문화가 있는 날'),
+            lastUpdated: formatDateStr(todayDate)
+          });
+        }
+      } else {
+        // KCISA
+        const items = xmlDoc.getElementsByTagName('item');
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          const getVal = (tag) => {
+            const node = item.getElementsByTagName(tag)[0];
+            return node ? node.textContent || '' : '';
+          };
+          const title = getVal('title') || getVal('eventTitle');
+          const venue = getVal('place') || getVal('eventPlace') || '전시관';
+          const address = getVal('address') || getVal('addr1') || '';
+          const { region, district } = parseAddress(address || venue);
+          const priceText = getVal('price') || getVal('fee') || getVal('charge') || '무료';
+          const priceType = determinePriceType(priceText);
+
+          list.push({
+            id: `kcisa-${i}-${Date.now()}`,
+            title,
+            venue,
+            region,
+            district,
+            startDate: formatToYmd(getVal('startDate') || getVal('eventStartDate')),
+            endDate: formatToYmd(getVal('endDate') || getVal('eventEndDate')),
+            priceType,
+            priceText,
+            category: getVal('realmName') || '전시',
+            description: stripHtml(getVal('subTitle') || getVal('overview') || '상세 전시 요약정보 제공처를 확인해 주세요.'),
+            address,
+            sourceName: '한국문화정보원',
+            sourceUrl: getVal('url') || '',
+            isCultureDay: title.includes('문화가 있는 날') || priceText.includes('문화가 있는 날'),
+            lastUpdated: formatDateStr(todayDate)
+          });
+        }
+      }
+      return list;
+    }
+
+    function parseJsonData(data, type) {
+      if (type === 'seoul') {
+        const rows = (data.culturalEventInfo && data.culturalEventInfo.row) || [];
+        return rows.map((item, idx) => {
+          const title = item.TITLE || '서울시 특별 전시';
+          const venue = item.PLACE || '서울 문화 공간';
+          const district = item.GUNAME || '';
+          const priceText = item.USE_FEE || '무료';
+          const priceType = determinePriceType(priceText);
+
+          return {
+            id: `seoul-${idx}-${Date.now()}`,
+            title,
+            venue,
+            region: '서울',
+            district,
+            startDate: formatToYmd(item.STRTDATE),
+            endDate: formatToYmd(item.END_DATE),
+            priceType,
+            priceText,
+            category: item.CODENAME || '전시',
+            description: stripHtml(item.PROGRAM || item.ETC_DESC || '상세 프로그램 행사 정보는 서울시 문화행사 채널을 참고하세요.'),
+            address: venue,
+            sourceName: '서울시 열린데이터광장',
+            sourceUrl: item.ORG_LINK || '',
+            isCultureDay: title.includes('문화가 있는 날') || priceText.includes('문화가 있는 날'),
+            lastUpdated: formatDateStr(todayDate)
+          };
+        });
+      }
+      return FALLBACK_EXHIBITIONS;
+    }
+
+    // -------------------------------------------------------------
+    // Storage & State Synchronization
+    // -------------------------------------------------------------
+    function getThisWeekDayDateString(targetDay) {
+      const today = new Date(todayDate);
+      const currentDay = today.getDay(); // 0: Sun, 1: Mon, ..., 6: Sat
+      let diff = targetDay - currentDay;
+      const targetDate = new Date(today);
+      targetDate.setDate(today.getDate() + diff);
+      
+      const yyyy = targetDate.getFullYear();
+      const mm = String(targetDate.getMonth() + 1).padStart(2, '0');
+      const dd = String(targetDate.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    function loadSavedExhibitions() {
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        const parsed = stored ? JSON.parse(stored) : [];
+        state.savedExhibitions = parsed.map(ex => {
+          let dates = ex.scheduledDates || [];
+          if (dates.length === 0 && ex.scheduleDay && ex.scheduleDay !== 'none') {
+            if (ex.scheduleDay === 'sat') {
+              dates = [getThisWeekDayDateString(6)];
+            } else if (ex.scheduleDay === 'sun') {
+              dates = [getThisWeekDayDateString(0)];
+            }
+          }
+          const item = {
+            ...ex,
+            scheduledDates: dates,
+            personalMemo: ex.personalMemo || ''
+          };
+          classifyExhibition(item);
+          return item;
+        });
+      } catch (e) {
+        state.savedExhibitions = [];
+      }
+      updateCalendarBadge();
+    }
+
+    function saveExhibitionToLocalStorage(ex) {
+      if (!state.savedExhibitions.some(item => item.id === ex.id)) {
+        const itemToSave = {
+          ...ex,
+          scheduledDates: ex.scheduledDates || [],
+          personalMemo: ex.personalMemo || ''
+        };
+        classifyExhibition(itemToSave);
+        state.savedExhibitions.push(itemToSave);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state.savedExhibitions));
+        showToast('일정 후보(미정)에 등록했습니다.');
+      }
+      updateCalendarBadge();
+      renderCalendarTab();
+      renderExhibitionCards();
+
+      // Instantly open DatePicker Modal for customization
+      openDatePickerModal(ex.id);
+    }
+
+    function removeExhibitionFromLocalStorage(id) {
+      state.savedExhibitions = state.savedExhibitions.filter(item => item.id !== id);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.savedExhibitions));
+      showToast('캘린더에서 해제되었습니다.');
+      updateCalendarBadge();
+      renderCalendarTab();
+      renderExhibitionCards();
+    }
+
+    function clearAllSaved() {
+      if (confirm('캘린더에 저장된 모든 전시회를 삭제하시겠습니까?')) {
+        state.savedExhibitions = [];
+        localStorage.removeItem(STORAGE_KEY);
+        showToast('캘린더가 완전히 비워졌습니다.');
+        updateCalendarBadge();
+        renderCalendarTab();
+        renderExhibitionCards();
+      }
+    }
+
+    function loadApiConfig() {
+      try {
+        const kcisa = localStorage.getItem('art_compass_kcisa') || '';
+        const seoul = localStorage.getItem('art_compass_seoul') || '';
+        const kopis = localStorage.getItem('art_compass_kopis') || '';
+        const endpoint = localStorage.getItem('art_compass_endpoint') || 'korea';
+        const proxy = localStorage.getItem('art_compass_proxy') || 'allorigins';
+
+        state.apiConfig = {
+          kcisaKey: cleanApiKey(kcisa),
+          seoulKey: cleanApiKey(seoul),
+          kopisKey: cleanApiKey(kopis),
+          endpointType: endpoint,
+          proxyServer: proxy
+        };
+      } catch (e) {}
+    }
+
+    function saveApiConfig(cfg) {
+      localStorage.setItem('art_compass_kcisa', cleanApiKey(cfg.kcisaKey));
+      localStorage.setItem('art_compass_seoul', cleanApiKey(cfg.seoulKey));
+      localStorage.setItem('art_compass_kopis', cleanApiKey(cfg.kopisKey));
+      localStorage.setItem('art_compass_endpoint', cfg.endpointType);
+      localStorage.setItem('art_compass_proxy', cfg.proxyServer);
+      
+      state.apiConfig = {
+        kcisaKey: cleanApiKey(cfg.kcisaKey),
+        seoulKey: cleanApiKey(cfg.seoulKey),
+        kopisKey: cleanApiKey(cfg.kopisKey),
+        endpointType: cfg.endpointType,
+        proxyServer: cfg.proxyServer
+      };
+      
+      showToast('API 연동 정보가 로컬 저장소에 기입되었습니다.');
+    }
+
+    function resetApiConfig() {
+      localStorage.removeItem('art_compass_kcisa');
+      localStorage.removeItem('art_compass_seoul');
+      localStorage.removeItem('art_compass_kopis');
+      localStorage.removeItem('art_compass_endpoint');
+      localStorage.removeItem('art_compass_proxy');
+
+      state.apiConfig = {
+        kcisaKey: '',
+        seoulKey: '',
+        kopisKey: '',
+        endpointType: 'korea',
+        proxyServer: 'allorigins'
+      };
+
+      DOM.inputKcisaKey.value = '';
+      DOM.inputSeoulKey.value = '';
+      DOM.inputKopisKey.value = '';
+      DOM.selectEndpoint.value = 'korea';
+      DOM.selectProxy.value = 'allorigins';
+
+      showToast('설정된 API 키가 리셋되었습니다.');
+    }
+
+    // -------------------------------------------------------------
+    // Layout Elements Renderers
+    // -------------------------------------------------------------
+    function renderGridMap() {
+      DOM.mapGridContainer.innerHTML = '';
+      
+      // We will loop from row 0 to 5
+      for (let r = 0; r <= 5; r++) {
+        for (let c = 0; c <= 3; c++) {
+          const matched = REGION_GRID.find(item => item.row === r && item.col === c);
+          if (matched) {
+            // Count total exhibitions for this region
+            const regExhibitions = state.exhibitions.filter(ex => ex.region === matched.name);
+            const totalCount = regExhibitions.length;
+            const freeCount = regExhibitions.filter(ex => ex.priceType === 'free').length;
+            
+            const cell = document.createElement('button');
+            cell.type = 'button';
+            cell.className = `map-cell p-2 bg-white dark:bg-[#18201a] border border-stone-200/70 dark:border-stone-800 rounded-2xl flex flex-col items-center justify-between text-center min-h-[72px] focus:outline-none shadow-sm ${state.selectedRegion === matched.name ? 'active' : ''}`;
+            cell.dataset.region = matched.name;
+            
+            cell.innerHTML = `
+              <span class="text-[11px] font-black text-stone-850 dark:text-stone-100 map-region-name select-none">${matched.name}</span>
+              <span class="text-[9px] text-stone-400 dark:text-stone-500 font-bold select-none mt-0.5">전시 ${totalCount}</span>
+              <span class="map-free-count text-[8px] font-black tracking-tight select-none ${freeCount > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-stone-400 dark:text-stone-600'}">${freeCount > 0 ? `무료 ${freeCount}` : '무료 0'}</span>
+            `;
+            
+            cell.addEventListener('click', () => {
+              if (state.selectedRegion === matched.name) {
+                state.selectedRegion = '전체';
+              } else {
+                state.selectedRegion = matched.name;
+              }
+              updateRegionSelectionVisuals();
+              applyFiltersAndRender();
+            });
+
+            DOM.mapGridContainer.appendChild(cell);
+          } else {
+            // Empty grid placeholder to preserve administrative shape layout
+            const spacer = document.createElement('div');
+            spacer.className = 'w-full min-h-[72px] bg-transparent';
+            DOM.mapGridContainer.appendChild(spacer);
+          }
+        }
+      }
+    }
+
+    function updateRegionSelectionVisuals() {
+      document.querySelectorAll('.map-cell').forEach(cell => {
+        if (cell.dataset.region === state.selectedRegion) {
+          cell.classList.add('active');
+        } else {
+          cell.classList.remove('active');
+        }
+      });
+    }
+
+    function classifyExhibition(ex) {
+      const title = ex.title || '';
+      const cat = (ex.category || '').trim();
+      const desc = ex.description || '';
+
+      let major = '전시';
+      let sub = 'none'; // 'domestic' | 'foreign' for concerts
+
+      const concertKeywords = ['콘서트', 'concert', '페스타', 'festa', '페스티벌', 'festival', '라이브', 'live', '투어', 'tour', '가요', '대중음악', '내한'];
+      const isConcert = concertKeywords.some(kw => title.toLowerCase().includes(kw) || cat.toLowerCase().includes(kw));
+
+      const singerFestivals = ['사운드베리', '워터밤', 'waterbomb', '펜타포트', 'pentaport', '락페', '그랜드 민트', 'gmf', '서울 재즈', 'sjf', '뷰티풀 민트', 'bmf', '러브썸', 'lovesome'];
+      const isSingerFestival = singerFestivals.some(kw => title.toLowerCase().includes(kw) || desc.toLowerCase().includes(kw));
+
+      if (isConcert || isSingerFestival) {
+        major = '콘서트';
+        
+        const foreignKeywords = [
+          '내한', 'world tour', '월드 투어', 'coldplay', '콜드플레이', 'charlie puth', '찰리 푸스', 'bruno mars', '브루노 마스',
+          'taylor swift', '테일러 스위프트', 'billie eilish', '빌리 아일리시', 'lauv', '라우브', 'oasis', '오아시스', 'yoasobi', '요아소비',
+          'benson boone', '벤슨 분', 'alan walker', '앨런 워커', 'ed sheeran', '에드 시런', 'ariana grande', '아리아나 그란데',
+          'maroon 5', '마룬파이브', 'post malone', '포스트 말론', 'dj', 'edm'
+        ];
+        const isForeign = foreignKeywords.some(kw => title.toLowerCase().includes(kw) || desc.toLowerCase().includes(kw));
+        
+        sub = isForeign ? 'foreign' : 'domestic';
+      } else if (
+        cat.includes('연극') || cat.includes('뮤지컬') || cat.includes('오페라') || 
+        cat.includes('무용') || cat.includes('발레') || cat.includes('국악') || 
+        cat.includes('클래식') || cat.includes('독주') || cat.includes('합창') || 
+        title.includes('연극') || title.includes('뮤지컬') || title.includes('무용') || title.includes('국악') || title.includes('클래식')
+      ) {
+        major = '공연';
+      } else {
+        major = '전시';
+      }
+
+      ex.majorCategory = major;
+      ex.concertType = sub;
+    }
+
+    function getCategoryDetails(category) {
+      const cat = (category || '').trim();
+      let emoji = '🎨';
+      let duration = '2시간';
+      
+      if (cat.includes('전시') || cat.includes('미술') || cat.includes('박물관') || cat.includes('기획전') || cat.includes('특별전') || cat.includes('공예') || cat.includes('회화') || cat.includes('조각')) {
+        emoji = '🖼️';
+        duration = '2시간';
+      } else if (cat.includes('연극')) {
+        emoji = '🎭';
+        duration = '1.5시간';
+      } else if (cat.includes('뮤지컬')) {
+        emoji = '🎪';
+        duration = '2.5시간';
+      } else if (cat.includes('오페라') || cat.includes('무용') || cat.includes('발레')) {
+        emoji = '🩰';
+        duration = '2시간';
+      } else if (cat.includes('콘서트') || cat.includes('음악') || cat.includes('클래식') || cat.includes('국악') || cat.includes('가요') || cat.includes('대중음악') || cat.includes('페스타') || cat.includes('페스티벌')) {
+        emoji = '🎤';
+        duration = '2.5시간';
+      } else if (cat.includes('축제') || cat.includes('행사')) {
+        emoji = '🎪';
+        duration = '3시간';
+      }
+      return { emoji, duration };
+    }
+
+    function updateViewModeVisuals() {
+      const activeClass = "px-2 py-0.5 rounded text-[9px] font-bold transition-all bg-white dark:bg-stone-700 text-stone-800 dark:text-stone-100 shadow-sm select-none";
+      const inactiveClass = "px-2 py-0.5 rounded text-[9px] font-bold transition-all text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-400 select-none";
+
+      DOM.btnViewCard.className = state.viewMode === 'card' ? activeClass : inactiveClass;
+      DOM.btnViewList.className = state.viewMode === 'list' ? activeClass : inactiveClass;
+      DOM.btnViewMapOpt.className = state.viewMode === 'map' ? activeClass : inactiveClass;
+    }
+
+    function applyFiltersAndRender() {
+      let filtered = state.exhibitions;
+
+      // 1. Filter by Region
+      if (state.selectedRegion !== '전체') {
+        filtered = filtered.filter(ex => ex.region === state.selectedRegion);
+      }
+
+      // 1.5 Filter by Category
+      if (state.categoryFilter !== 'all') {
+        filtered = filtered.filter(ex => ex.majorCategory === state.categoryFilter);
+        
+        if (state.categoryFilter === '콘서트' && state.concertArtistFilter !== 'all') {
+          filtered = filtered.filter(ex => ex.concertType === state.concertArtistFilter);
+        }
+      }
+
+      // 2. Filter by Search Query
+      if (state.searchQuery.trim() !== '') {
+        const q = state.searchQuery.toLowerCase().trim();
+        filtered = filtered.filter(ex => 
+          ex.title.toLowerCase().includes(q) || 
+          ex.venue.toLowerCase().includes(q) || 
+          ex.address.toLowerCase().includes(q)
+        );
+      }
+
+      // 3. Filter by Price/Benefit
+      if (state.priceFilter === 'free') {
+        filtered = filtered.filter(ex => ex.priceType === 'free');
+      } else if (state.priceFilter === 'culture') {
+        filtered = filtered.filter(ex => ex.isCultureDay);
+      }
+
+      // 4. Filter by Date/Schedule
+      if (state.dateFilter !== 'all') {
+        const today = new Date(todayDate);
+        today.setHours(0, 0, 0, 0);
+
+        filtered = filtered.filter(ex => {
+          const start = new Date(ex.startDate);
+          start.setHours(0, 0, 0, 0);
+          const end = new Date(ex.endDate);
+          end.setHours(23, 59, 59, 999);
+
+          if (state.dateFilter === 'ongoing') {
+            return start <= today && end >= today;
+          } else if (state.dateFilter === 'upcoming') {
+            return start > today;
+          } else if (state.dateFilter === 'ending') {
+            const diffTime = end - today;
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            return diffDays >= 0 && diffDays <= 7;
+          } else if (state.dateFilter === 'weekend') {
+            const dayOfWeek = today.getDay();
+            const sat = new Date(today);
+            const sun = new Date(today);
+
+            if (dayOfWeek === 0) {
+              sat.setDate(today.getDate() - 1);
+            } else if (dayOfWeek === 6) {
+              sun.setDate(today.getDate() + 1);
+            } else {
+              sat.setDate(today.getDate() + (6 - dayOfWeek));
+              sun.setDate(today.getDate() + (7 - dayOfWeek));
+            }
+            sat.setHours(0, 0, 0, 0);
+            sun.setHours(23, 59, 59, 999);
+
+            return start <= sun && end >= sat;
+          } else if (state.dateFilter === 'month') {
+            const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+            const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+            lastDay.setHours(23, 59, 59, 999);
+            return start <= lastDay && end >= firstDay;
+          }
+          return true;
+        });
+      }
+
+      // 4. Sort
+      filtered = sortExhibitionsList(filtered, state.sortBy);
+
+      state.filteredExhibitions = filtered;
+      DOM.exhibitionStats.textContent = `검색결과: ${filtered.length}개`;
+      renderExhibitionCards();
+      updateExhibitionsMap();
+    }
+
+    function sortExhibitionsList(list, type) {
+      const copy = [...list];
+      if (type === 'endingSoon') {
+        return copy.sort((a, b) => new Date(a.endDate) - new Date(b.endDate));
+      } else if (type === 'freeFirst') {
+        return copy.sort((a, b) => {
+          const typeA = a.priceType === 'free' ? 0 : 1;
+          const typeB = b.priceType === 'free' ? 0 : 1;
+          if (typeA !== typeB) return typeA - typeB;
+          return new Date(a.endDate) - new Date(b.endDate);
+        });
+      } else if (type === 'cultureDayFirst') {
+        return copy.sort((a, b) => {
+          const cdA = a.isCultureDay ? 0 : 1;
+          const cdB = b.isCultureDay ? 0 : 1;
+          if (cdA !== cdB) return cdA - cdB;
+          return new Date(a.endDate) - new Date(b.endDate);
+        });
+      } else if (type === 'alphabetical') {
+        return copy.sort((a, b) => a.title.localeCompare(b.title, 'ko'));
+      }
+      return copy;
+    }
+
+    function renderExhibitionCards() {
+      const mapSection = document.getElementById('map-section');
+      const mapWrapper = document.getElementById('map-container-wrapper');
+      const btnToggleMap = document.getElementById('btn-toggle-map');
+
+      if (state.viewMode === 'map') {
+        DOM.exhibitionsContainer.innerHTML = '';
+        DOM.exhibitionsContainer.classList.add('hidden');
+        if (mapSection) mapSection.classList.remove('hidden');
+        if (btnToggleMap) btnToggleMap.classList.add('hidden');
+        if (mapWrapper) {
+          mapWrapper.className = "transition-all duration-300 overflow-hidden h-[500px]";
+        }
+        setTimeout(() => {
+          if (maps.searchMap) maps.searchMap.invalidateSize();
+        }, 100);
+        return;
+      } else {
+        DOM.exhibitionsContainer.classList.remove('hidden');
+        if (mapSection) mapSection.classList.add('hidden');
+        if (btnToggleMap) btnToggleMap.classList.remove('hidden');
+        if (mapWrapper) {
+          if (isMapFolded) {
+            mapWrapper.className = "transition-all duration-300 overflow-hidden h-[0px]";
+          } else {
+            mapWrapper.className = "transition-all duration-300 overflow-hidden h-[240px]";
+          }
+        }
+
+        if (state.viewMode === 'card') {
+          DOM.exhibitionsContainer.className = "grid grid-cols-1 lg:grid-cols-2 gap-4 pt-1 lg:pb-6 flex-1";
+        } else {
+          DOM.exhibitionsContainer.className = "grid grid-cols-1 gap-2.5 pt-1 lg:pb-6 flex-1";
+        }
+
+        setTimeout(() => {
+          if (maps.searchMap) maps.searchMap.invalidateSize();
+        }, 100);
+      }
+
+      DOM.exhibitionsContainer.innerHTML = '';
+      if (state.filteredExhibitions.length === 0) {
+        DOM.exhibitionsContainer.innerHTML = `
+          <div class="py-12 text-center space-y-2 select-none">
+            <span class="text-3xl">🔍</span>
+            <h3 class="text-sm font-bold text-stone-700 dark:text-stone-300">조건에 맞는 전시가 존재하지 않습니다.</h3>
+            <p class="text-[10px] text-stone-400 dark:text-stone-500">검색 조건 또는 행정구역 선택을 넓혀 보세요.</p>
+          </div>
+        `;
+        return;
+      }
+
+      state.filteredExhibitions.forEach(ex => {
+        const isSaved = state.savedExhibitions.some(item => item.id === ex.id);
+        const costInfo = parseExhibitionCost(ex);
+        const catDetails = getCategoryDetails(ex.category);
+        
+        let priceBadgeClass = 'bg-stone-100 text-stone-600 dark:bg-stone-850 dark:text-stone-400';
+        if (ex.priceType === 'free') priceBadgeClass = 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400';
+        else if (ex.priceType === 'discount') priceBadgeClass = 'bg-amber-50 text-amber-600 dark:bg-amber-950/20 dark:text-amber-400';
+
+        // Format dates into a cleaner view
+        const sDate = ex.startDate.substring(5).replace('-', '/');
+        const eDate = ex.endDate.substring(5).replace('-', '/');
+
+        if (state.viewMode === 'list') {
+          const row = document.createElement('div');
+          row.className = 'clay-card p-3 flex items-center justify-between gap-3 dark:bg-[#18201a] select-text';
+          row.innerHTML = `
+            <div class="flex items-center gap-2 overflow-hidden flex-1 select-text">
+              <span class="text-base select-none shrink-0" title="${escapeHtml(ex.category)}">${catDetails.emoji}</span>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <h4 class="text-xs font-black text-stone-800 dark:text-stone-200 truncate hover:underline cursor-pointer btn-list-details-title">${escapeHtml(ex.title)}</h4>
+                  <span class="text-[8px] font-extrabold px-1.5 py-0.5 rounded-md shrink-0 ${priceBadgeClass}">${costInfo.label}</span>
+                </div>
+                <p class="text-[9px] font-bold text-stone-400 dark:text-stone-500 mt-0.5 truncate">
+                  🏛️ ${escapeHtml(ex.venue)} · ⏱️ ${catDetails.duration} · 📅 ${sDate}~${eDate}
+                </p>
+              </div>
+            </div>
+            <div class="flex gap-1.5 shrink-0">
+              <button class="btn-list-details text-[10px] px-2.5 py-1.5 rounded-xl font-bold clay-button-secondary select-none" data-id="${ex.id}">상세</button>
+              <button class="btn-list-save text-[10px] px-2.5 py-1.5 rounded-xl font-bold select-none text-white ${isSaved ? 'bg-rose-600 dark:bg-rose-700/80 hover:bg-rose-700 active:bg-rose-800' : 'bg-forest-800 hover:bg-forest-700'}" data-id="${ex.id}">
+                ${isSaved ? '❤️' : '➕'}
+              </button>
+            </div>
+          `;
+          row.querySelector('.btn-list-details-title').addEventListener('click', () => openExhibitionDetails(ex.id));
+          row.querySelector('.btn-list-details').addEventListener('click', () => openExhibitionDetails(ex.id));
+          row.querySelector('.btn-list-save').addEventListener('click', () => {
+            if (isSaved) {
+              removeExhibitionFromLocalStorage(ex.id);
+            } else {
+              saveExhibitionToLocalStorage(ex);
+            }
+          });
+          DOM.exhibitionsContainer.appendChild(row);
+        } else {
+          const card = document.createElement('article');
+          card.className = 'clay-card p-5 space-y-4 relative flex flex-col justify-between dark:bg-[#18201a] select-text';
+          
+          const categoryColors = [
+            'from-emerald-400/20 to-teal-400/20',
+            'from-amber-400/20 to-orange-400/20',
+            'from-blue-400/20 to-indigo-400/20',
+            'from-rose-400/20 to-purple-400/20'
+          ];
+          const colorSeed = ex.title.charCodeAt(0) % categoryColors.length;
+          const selectedGradient = categoryColors[colorSeed];
+
+          card.innerHTML = `
+            <div class="flex gap-4 items-start">
+              <div class="w-14 h-14 rounded-2xl bg-gradient-to-br ${selectedGradient} shrink-0 flex items-center justify-center text-2xl shadow-inner select-none">
+                ${catDetails.emoji}
+              </div>
+              
+              <div class="flex-1 space-y-1.5 overflow-hidden">
+                <div class="flex flex-wrap gap-1.5">
+                  <span class="text-[8px] font-extrabold px-1.5 py-0.5 rounded-md ${priceBadgeClass}">${costInfo.label}</span>
+                  ${ex.isCultureDay ? '<span class="text-[8px] font-extrabold px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-600 dark:bg-blue-950/20 dark:text-blue-400">🎁 문화가있는날</span>' : ''}
+                  <span class="text-[8px] font-extrabold px-1.5 py-0.5 rounded-md bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400">⏱️ ${catDetails.duration}</span>
+                </div>
+                <h3 class="text-xs font-black text-stone-850 dark:text-stone-100 line-clamp-2 leading-tight py-0.5">${escapeHtml(ex.title)}</h3>
+                <div class="space-y-0.5">
+                  <p class="text-[9px] font-bold text-stone-400 dark:text-stone-500">🏛️ ${escapeHtml(ex.venue)} · ${ex.region} ${escapeHtml(ex.district)}</p>
+                  <p class="text-[9px] font-bold text-stone-400 dark:text-stone-500">📅 ${sDate} ~ ${eDate}</p>
+                </div>
+              </div>
+            </div>
+
+            <p class="text-[10px] text-stone-500 dark:text-stone-400/80 line-clamp-2 leading-relaxed font-medium px-1">
+              ${escapeHtml(ex.description || '본 전시에 등록된 세부 요약 소개글이 존재하지 않습니다.')}
+            </p>
+
+            <div class="flex gap-2.5 pt-2">
+              <button class="btn-card-details flex-1 clay-button-secondary text-[10px] py-2.5 rounded-xl font-bold select-none" data-id="${ex.id}">상세 정보</button>
+              <button class="btn-card-save flex-[1.2] clay-button text-[10px] py-2.5 rounded-xl font-bold select-none ${isSaved ? 'bg-rose-600 dark:bg-rose-700/80 hover:bg-rose-700 active:bg-rose-800 border-rose-600' : 'bg-forest-800 hover:bg-forest-700'}" data-id="${ex.id}">
+                ${isSaved ? '❤️ 저장 해제' : '💙 캘린더 담기'}
+              </button>
+            </div>
+          `;
+
+          card.querySelector('.btn-card-details').addEventListener('click', () => openExhibitionDetails(ex.id));
+          card.querySelector('.btn-card-save').addEventListener('click', () => {
+            if (isSaved) {
+              removeExhibitionFromLocalStorage(ex.id);
+            } else {
+              saveExhibitionToLocalStorage(ex);
+            }
+          });
+
+          DOM.exhibitionsContainer.appendChild(card);
+        }
+      });
+    }
+
+    function updateSavedExhibition(id, fields) {
+      const idx = state.savedExhibitions.findIndex(item => item.id === id);
+      if (idx !== -1) {
+        state.savedExhibitions[idx] = { ...state.savedExhibitions[idx], ...fields };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state.savedExhibitions));
+        renderCalendarTab();
+      }
+    }
+
+    // -------------------------------------------------------------
+    // Date Picker Modal Logic
+    // -------------------------------------------------------------
+    let datePickerState = {
+      activeExhibitionId: null,
+      activeYear: 2026,
+      activeMonth: 9,
+      selectedDates: []
+    };
+
+    function openDatePickerModal(id) {
+      const ex = state.savedExhibitions.find(item => item.id === id) || state.exhibitions.find(item => item.id === id);
+      if (!ex) return;
+
+      if (!state.savedExhibitions.some(item => item.id === id)) {
+        const itemToSave = {
+          ...ex,
+          scheduledDates: [],
+          personalMemo: ''
+        };
+        state.savedExhibitions.push(itemToSave);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state.savedExhibitions));
+        updateCalendarBadge();
+      }
+
+      const savedEx = state.savedExhibitions.find(item => item.id === id);
+      datePickerState.activeExhibitionId = id;
+      datePickerState.selectedDates = [...(savedEx.scheduledDates || [])];
+
+      const startDate = new Date(savedEx.startDate);
+      datePickerState.activeYear = startDate.getFullYear() || new Date(todayDate).getFullYear();
+      datePickerState.activeMonth = startDate.getMonth() || new Date(todayDate).getMonth();
+
+      DOM.datepickerTitle.textContent = savedEx.title;
+      DOM.datepickerRangeText.textContent = `${savedEx.startDate} ~ ${savedEx.endDate}`;
+
+      renderDatePickerCalendar();
+
+      DOM.datepickerModal.classList.remove('pointer-events-none');
+      DOM.datepickerModal.classList.add('opacity-100');
+      document.getElementById('datepicker-content').classList.remove('translate-y-full');
+    }
+
+    function closeDatePickerModal() {
+      DOM.datepickerModal.classList.add('pointer-events-none');
+      DOM.datepickerModal.classList.remove('opacity-100');
+      document.getElementById('datepicker-content').classList.add('translate-y-full');
+      renderExhibitionCards();
+      renderCalendarTab();
+    }
+
+    function renderDatePickerCalendar() {
+      const ex = state.exhibitions.find(item => item.id === datePickerState.activeExhibitionId) || state.savedExhibitions.find(item => item.id === datePickerState.activeExhibitionId);
+      const year = datePickerState.activeYear;
+      const month = datePickerState.activeMonth;
+
+      DOM.datepickerMonthYear.textContent = `${year}년 ${month + 1}월`;
+      DOM.datepickerDaysGrid.innerHTML = '';
+
+      const firstDayIndex = new Date(year, month, 1).getDay();
+      const totalDays = new Date(year, month + 1, 0).getDate();
+
+      for (let i = 0; i < firstDayIndex; i++) {
+        const padding = document.createElement('div');
+        DOM.datepickerDaysGrid.appendChild(padding);
+      }
+
+      for (let day = 1; day <= totalDays; day++) {
+        const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const dayBtn = document.createElement('button');
+        dayBtn.type = 'button';
+        dayBtn.textContent = day;
+
+        const isWithinRange = dStr >= ex.startDate && dStr <= ex.endDate;
+        const isSelected = datePickerState.selectedDates.includes(dStr);
+
+        if (isWithinRange) {
+          if (isSelected) {
+            dayBtn.className = 'w-7 h-7 mx-auto flex items-center justify-center rounded-full bg-emerald-600 dark:bg-emerald-700 text-white font-extrabold shadow-sm select-none transition-all';
+          } else {
+            dayBtn.className = 'w-7 h-7 mx-auto flex items-center justify-center rounded-full font-bold text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-850 transition-colors';
+          }
+          
+          dayBtn.addEventListener('click', () => {
+            if (isSelected) {
+              datePickerState.selectedDates = datePickerState.selectedDates.filter(d => d !== dStr);
+            } else {
+              datePickerState.selectedDates.push(dStr);
+              datePickerState.selectedDates.sort();
+            }
+            renderDatePickerCalendar();
+          });
+        } else {
+          dayBtn.className = 'w-7 h-7 mx-auto flex items-center justify-center rounded-full text-stone-300 dark:text-stone-750 cursor-not-allowed select-none';
+          dayBtn.disabled = true;
+        }
+
+        DOM.datepickerDaysGrid.appendChild(dayBtn);
+      }
+
+      DOM.datepickerSelectedCount.textContent = datePickerState.selectedDates.length;
+      DOM.datepickerSelectedList.innerHTML = '';
+
+      if (datePickerState.selectedDates.length === 0) {
+        DOM.datepickerSelectedList.innerHTML = `<span class="text-[9px] font-bold text-stone-400 select-none">날짜를 달력에서 클릭해 주세요.</span>`;
+      } else {
+        datePickerState.selectedDates.forEach(d => {
+          const badge = document.createElement('span');
+          badge.className = 'text-[9px] font-extrabold bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400 px-2 py-0.5 rounded-lg border border-emerald-200/20 flex items-center gap-1 select-none';
+          badge.innerHTML = `${d} <button type="button" class="text-[10px] text-emerald-600/70 hover:text-emerald-800 font-bold" onclick="window.removeDatePickerSelectedDate('${d}')">&times;</button>`;
+          DOM.datepickerSelectedList.appendChild(badge);
+        });
+      }
+    }
+
+    window.removeDatePickerSelectedDate = (dateStr) => {
+      datePickerState.selectedDates = datePickerState.selectedDates.filter(d => d !== dateStr);
+      renderDatePickerCalendar();
+    };
+
+    function renderCalendarTab() {
+      DOM.calendarTimelineContainer.innerHTML = '';
+      
+      const saved = state.savedExhibitions;
+      const totalCount = saved.length;
+      
+      let totalCost = 0;
+      let unresolved = false;
+      let freeCount = 0;
+
+      saved.forEach(ex => {
+        const parsed = parseExhibitionCost(ex);
+        if (parsed.priceType === 'free') {
+          freeCount++;
+        } else if (parsed.priceType === 'paid') {
+          if (parsed.isExact) totalCost += parsed.amount;
+          else unresolved = true;
+        } else {
+          unresolved = true;
+        }
+      });
+
+      const maxBudget = 50000;
+      const progressPercent = Math.min((totalCost / maxBudget) * 100, 100);
+      const dashArray = 251.2;
+      const offset = dashArray - (dashArray * progressPercent) / 100;
+      
+      DOM.gaugeProgress.setAttribute('stroke-dashoffset', offset);
+      DOM.gaugeProgress.className.baseVal = "gauge-fill transition-all " + 
+        (totalCost === 0 ? "text-emerald-500" : 
+         (totalCost <= 20000 ? "text-emerald-400" : 
+          (totalCost <= 40000 ? "text-amber-500" : "text-rose-500")));
+
+      const formatted = totalCost.toLocaleString();
+      DOM.gaugeCostDisplay.textContent = unresolved ? `${formatted}원+` : `${formatted}원`;
+      DOM.summaryCostTxt.textContent = unresolved ? `${formatted}원+` : `${formatted}원`;
+      
+      if (totalCost === 0) {
+        DOM.gaugeBadge.textContent = "가성비 최고! 💸";
+        DOM.gaugeBadge.className = "text-[8px] font-extrabold px-1.5 py-0.5 bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400 rounded-full mt-1";
+        DOM.gaugeAdviceText.textContent = "내 전시 일정을 모두 100% 무료 전시회로만 채웠습니다. 실속 만점의 알뜰한 문화생활 코스입니다!";
+      } else if (totalCost <= 20000) {
+        DOM.gaugeBadge.textContent = "합리적 지출 🌱";
+        DOM.gaugeBadge.className = "text-[8px] font-extrabold px-1.5 py-0.5 bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400 rounded-full mt-1";
+        DOM.gaugeAdviceText.textContent = "가벼운 예산으로 예술적 갈증을 해소하고 있습니다. 연인과의 차 한 잔 값으로 전시를 해결해 보세요!";
+      } else if (totalCost <= 40000) {
+        DOM.gaugeBadge.textContent = "알찬 주간 ☕";
+        DOM.gaugeBadge.className = "text-[8px] font-extrabold px-1.5 py-0.5 bg-amber-50 text-amber-600 dark:bg-amber-950/20 dark:text-amber-400 rounded-full mt-1";
+        DOM.gaugeAdviceText.textContent = "알차고 품격 있는 문화생활 스케줄입니다. 현장 제휴 할인을 챙겨 예산을 더 절약해 보세요.";
+      } else {
+        DOM.gaugeBadge.textContent = "조금 플렉스 💎";
+        DOM.gaugeBadge.className = "text-[8px] font-extrabold px-1.5 py-0.5 bg-rose-50 text-rose-600 dark:bg-rose-950/20 dark:text-rose-400 rounded-full mt-1";
+        DOM.gaugeAdviceText.textContent = "예산을 든든히 충전한 문화 예술 주간입니다. 정가형 대형 기획전이나 특별 투어를 만끽하십시오!";
+      }
+
+      const scheduledGroups = {};
+      const unscheduledList = [];
+
+      saved.forEach(ex => {
+        const dates = ex.scheduledDates || [];
+        if (dates.length === 0) {
+          unscheduledList.push(ex);
+        } else {
+          dates.forEach(d => {
+            if (!scheduledGroups[d]) scheduledGroups[d] = [];
+            scheduledGroups[d].push(ex);
+          });
+        }
+      });
+
+      const sortedDates = Object.keys(scheduledGroups).sort();
+
+      const getWeekdayLabel = (dateStr) => {
+        const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
+        const dayIdx = new Date(dateStr).getDay();
+        return weekdays[dayIdx] || '';
+      };
+
+      const renderDaySection = (dayTitle, dayColorClass, dayItems, isUnscheduled = false) => {
+        const section = document.createElement('div');
+        section.className = 'space-y-2.5 pb-4';
+        
+        const header = document.createElement('h4');
+        header.className = `text-[9px] font-extrabold px-2.5 py-1.5 rounded-xl inline-block ${dayColorClass} select-none`;
+        header.textContent = dayTitle;
+        section.appendChild(header);
+        
+        if (dayItems.length === 0) {
+          const empty = document.createElement('p');
+          empty.className = 'text-[9px] text-stone-400 dark:text-stone-500 font-bold pl-3.5 select-none';
+          empty.textContent = '배정된 일정이 없습니다.';
+          section.appendChild(empty);
+          DOM.calendarTimelineContainer.appendChild(section);
+          return;
+        }
+        
+        dayItems.forEach((ex, idx) => {
+          const costInfo = parseExhibitionCost(ex);
+          const catDetails = getCategoryDetails(ex.category);
+          
+          const card = document.createElement('div');
+          card.className = 'relative flex flex-col justify-between p-3.5 bg-white dark:bg-[#18201a] border border-stone-200/50 dark:border-stone-850 rounded-2xl shadow-sm hover:border-emerald-600/30 transition-all select-text';
+          
+          const refDateStr = (!isUnscheduled && ex.scheduledDates && ex.scheduledDates.length > 0) ? ex.scheduledDates[0] : ex.startDate;
+          const startIso = refDateStr.replace(/-/g, '');
+          const endIso = refDateStr.replace(/-/g, '');
+          const googleCalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(ex.title)}&dates=${startIso}/${endIso}&details=${encodeURIComponent(ex.description || '')}&location=${encodeURIComponent(ex.venue || '')}`;
+          
+          const cleanText = (t) => (t || '').replace(/[\\,;]/g, '\\$&').replace(/\n/g, '\\n');
+          const startIcs = refDateStr.replace(/-/g, '') + 'T090000';
+          const endIcs = refDateStr.replace(/-/g, '') + 'T180000';
+          const icsContent = [
+            'BEGIN:VCALENDAR',
+            'VERSION:2.0',
+            'PRODID:-//ArtCompass//Exhibition Scheduler//KO',
+            'BEGIN:VEVENT',
+            `UID:ex-${ex.id}@artcompass.com`,
+            `DTSTART:${startIcs}`,
+            `DTEND:${endIcs}`,
+            `SUMMARY:${cleanText(ex.title)}`,
+            `DESCRIPTION:${cleanText(ex.description || '')}`,
+            `LOCATION:${cleanText(ex.venue || '')}`,
+            'END:VEVENT',
+            'END:VCALENDAR'
+          ].join('\r\n');
+          const icsDataUri = 'data:text/calendar;charset=utf-8,' + encodeURIComponent(icsContent);
+
+          let datePillsHtml = '';
+          if (ex.scheduledDates && ex.scheduledDates.length > 0) {
+            ex.scheduledDates.forEach(d => {
+              datePillsHtml += `<span class="text-[8px] font-bold bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.2 rounded border border-emerald-100 dark:border-emerald-900/30">${d}</span>`;
+            });
+          } else {
+            datePillsHtml = `<span class="text-[8px] font-bold bg-stone-100 dark:bg-stone-850 text-stone-500 px-1.5 py-0.2 rounded">미정</span>`;
+          }
+
+          card.innerHTML = `
+            <div class="flex justify-between items-start gap-2">
+              <div class="space-y-1 overflow-hidden flex-1 select-text">
+                <div class="flex flex-wrap gap-1 items-center">
+                  <span class="text-[8px] font-extrabold px-1.5 py-0.5 rounded bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400">${costInfo.label}</span>
+                  <span class="text-[8px] font-extrabold px-1.5 py-0.5 rounded bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400">⏱️ 관람 ${catDetails.duration}</span>
+                </div>
+                <h4 class="text-[11px] font-black text-stone-850 dark:text-stone-150 leading-snug line-clamp-1 hover:underline cursor-pointer btn-timeline-details-title">${escapeHtml(ex.title)}</h4>
+                <p class="text-[9px] font-bold text-stone-400 dark:text-stone-500 mt-0.5">🏛️ ${escapeHtml(ex.venue)} (${ex.region} ${escapeHtml(ex.district)})</p>
+              </div>
+              <button class="btn-timeline-remove text-stone-400 hover:text-stone-700 dark:text-stone-500 dark:hover:text-stone-300 font-extrabold text-xs select-none" title="스케줄에서 삭제">&times;</button>
+            </div>
+            
+            <div class="mt-3 flex items-center justify-between border-t border-stone-100 dark:border-stone-800 pt-2.5">
+              <div class="flex items-center gap-1.5">
+                <span class="text-[8px] font-extrabold text-stone-400 dark:text-stone-500 select-none">배정:</span>
+                <div class="flex items-center border border-stone-200 dark:border-stone-850 rounded-lg p-0.5 bg-stone-50 dark:bg-stone-900">
+                  <button class="btn-sched-day px-2 py-0.5 rounded text-[8px] font-black transition-all ${ex.scheduleDay === 'sat' ? 'bg-emerald-600 text-white dark:bg-emerald-700' : 'text-stone-400 dark:text-stone-500'}" data-day="sat">토</button>
+                  <button class="btn-sched-day px-2 py-0.5 rounded text-[8px] font-black transition-all ${ex.scheduleDay === 'sun' ? 'bg-emerald-600 text-white dark:bg-emerald-700' : 'text-stone-400 dark:text-stone-500'}" data-day="sun">일</button>
+                  <button class="btn-sched-day px-2 py-0.5 rounded text-[8px] font-black transition-all ${(!ex.scheduleDay || ex.scheduleDay === 'none') ? 'bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-200' : 'text-stone-400 dark:text-stone-500'}" data-day="none">미정</button>
+                </div>
+              </div>
+              
+              <div class="flex items-center gap-1.5">
+                <a href="${googleCalUrl}" target="_blank" class="w-6 h-6 rounded-lg border border-stone-200 dark:border-stone-800 flex items-center justify-center text-[10px] bg-stone-50 dark:bg-stone-900 hover:bg-stone-100 dark:hover:bg-stone-800 select-none" title="구글 캘린더 등록">📅</a>
+                <a href="${icsDataUri}" download="${escapeHtml(ex.title)}.ics" class="w-6 h-6 rounded-lg border border-stone-200 dark:border-stone-800 flex items-center justify-center text-[10px] bg-stone-50 dark:bg-stone-900 hover:bg-stone-100 dark:hover:bg-stone-800 select-none" title="캘린더 ICS 파일 다운로드">💾</a>
+              </div>
+            </div>
+            
+            <div class="mt-2.5">
+              <input type="text" class="input-timeline-memo w-full bg-stone-50 dark:bg-[#121814] border border-stone-200/70 dark:border-stone-800 text-[10px] text-stone-700 dark:text-stone-300 rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-emerald-600 transition-colors" placeholder="📝 나만의 스케줄 메모를 입력하세요 (자동 저장)..." value="${escapeHtml(ex.personalMemo || '')}">
+            </div>
+          `;
+          
+          card.querySelector('.btn-timeline-details-title').addEventListener('click', () => openExhibitionDetails(ex.id));
+          
+          card.querySelector('.btn-timeline-remove').addEventListener('click', (e) => {
+            e.stopPropagation();
+            removeExhibitionFromLocalStorage(ex.id);
+          });
+          
+          card.querySelectorAll('.btn-sched-day').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              const day = btn.dataset.day;
+              updateSavedExhibition(ex.id, { scheduleDay: day });
+            });
+          });
+          
+          const memoInput = card.querySelector('.input-timeline-memo');
+          memoInput.addEventListener('input', (e) => {
+            const idx = state.savedExhibitions.findIndex(item => item.id === ex.id);
+            if (idx !== -1) {
+              state.savedExhibitions[idx].personalMemo = e.target.value;
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(state.savedExhibitions));
+            }
+          });
+
+          section.appendChild(card);
+        });
+
+        DOM.calendarTimelineContainer.appendChild(section);
+      };
+
+      // 1. Render scheduled dates chronologically
+      sortedDates.forEach(d => {
+        const weekday = getWeekdayLabel(d);
+        const isWeekend = weekday === '토' || weekday === '일';
+        const colorClass = isWeekend
+          ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300 border border-emerald-200/50 dark:border-emerald-900/30'
+          : 'bg-blue-50 text-blue-800 dark:bg-blue-950/30 dark:text-blue-300 border border-blue-200/50 dark:border-blue-900/30';
+        
+        renderDaySection(`🗓️ ${d} (${weekday}요일) 일정`, colorClass, scheduledGroups[d], false);
+
+        const separator = document.createElement('div');
+        separator.className = 'border-t border-stone-200/30 dark:border-stone-800/40 my-1';
+        DOM.calendarTimelineContainer.appendChild(separator);
+      });
+
+      // 2. Render unscheduled items
+      renderDaySection(
+        '⏳ 일정 미정 (Unscheduled Candidates)', 
+        'bg-stone-100 text-stone-700 dark:bg-stone-800/50 dark:text-stone-400 border border-stone-200/60 dark:border-stone-700/50', 
+        unscheduledList,
+        true
+      );
+
+      updateCalendarMap();
+    }
+
+    function updateCalendarBadge() {
+      const count = state.savedExhibitions.length;
+      DOM.calendarCountBadge.textContent = count;
+      if (count > 0) {
+        DOM.calendarCountBadge.classList.remove('scale-0');
+        DOM.calendarCountBadge.classList.add('scale-100');
+      } else {
+        DOM.calendarCountBadge.classList.remove('scale-100');
+        DOM.calendarCountBadge.classList.add('scale-0');
+      }
+    }
+
+    function updateStatusBannerDisplay() {
+      if (state.dataSource === 'live') {
+        let label = '';
+        if (state.apiConfig.endpointType === 'all') {
+          const activeLabels = [];
+          if (state.apiConfig.kcisaKey) activeLabels.push('한국문화정보원');
+          if (state.apiConfig.seoulKey) activeLabels.push('서울시');
+          if (state.apiConfig.kopisKey) activeLabels.push('문화체육관광부');
+          label = `전체 소스 통합: ${activeLabels.join(', ')}`;
+        } else {
+          label = state.apiConfig.endpointType === 'seoul' ? '서울시 열린데이터' : (state.apiConfig.endpointType === 'kopis' ? '문화체육관광부' : '한국문화정보원');
+        }
+        DOM.bannerText.textContent = `⚡ [${label}] 공공 API 연동에 성공했습니다. 최신 전시/미술 정보를 제공하고 있습니다.`;
+        DOM.noticeBanner.className = "mx-4 mt-3 p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200/50 dark:border-emerald-900/30 flex items-start gap-2.5 transition-all text-xs text-emerald-800 dark:text-emerald-300 font-medium";
+      } else {
+        DOM.bannerText.textContent = "API 연동 키가 부재하거나 CORS 차단 장벽이 발생해 오프라인 5종 마스터 큐레이션 데이터로 구동합니다.";
+        DOM.noticeBanner.className = "mx-4 mt-3 p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/30 flex items-start gap-2.5 transition-all text-xs text-amber-800 dark:text-amber-300 font-medium";
+      }
+    }
+
+    // -------------------------------------------------------------
+    // Dialog overlays (Drawer settings & details)
+    // -------------------------------------------------------------
+    function openSettings() {
+      // populate inputs
+      DOM.inputKcisaKey.value = state.apiConfig.kcisaKey;
+      DOM.inputSeoulKey.value = state.apiConfig.seoulKey;
+      DOM.inputKopisKey.value = state.apiConfig.kopisKey;
+      DOM.selectEndpoint.value = state.apiConfig.endpointType;
+      DOM.selectProxy.value = state.apiConfig.proxyServer;
+
+      DOM.settingsDrawer.classList.remove('pointer-events-none');
+      DOM.settingsDrawer.classList.add('opacity-100');
+      DOM.settingsContent.classList.remove('translate-y-full');
+
+      // Asynchronously trigger status verification
+      testAndShowApiKeysStatus();
+    }
+
+    function closeSettings() {
+      DOM.settingsDrawer.classList.add('pointer-events-none');
+      DOM.settingsDrawer.classList.remove('opacity-100');
+      DOM.settingsContent.classList.add('translate-y-full');
+    }
+
+    function saveSettings() {
+      const overrides = {
+        kcisaKey: DOM.inputKcisaKey.value,
+        seoulKey: DOM.inputSeoulKey.value,
+        kopisKey: DOM.inputKopisKey.value,
+        endpointType: DOM.selectEndpoint.value,
+        proxyServer: DOM.selectProxy.value
+      };
+      
+      saveApiConfig(overrides);
+      closeSettings();
+      initializeData();
+    }
+
+    function openExhibitionDetails(id) {
+      const ex = state.exhibitions.find(item => item.id === id);
+      if (!ex) return;
+
+      state.selectedExhibitionId = id;
+      const costInfo = parseExhibitionCost(ex);
+      const isSaved = state.savedExhibitions.some(item => item.id === ex.id);
+      const catDetails = getCategoryDetails(ex.category);
+
+      // Populate text details
+      DOM.modalTitle.textContent = ex.title;
+      DOM.modalVenue.textContent = `${ex.venue} (${ex.region} ${ex.district})`;
+      DOM.modalAddress.textContent = ex.address || '상세 주소 미제공';
+      DOM.modalDates.textContent = `${ex.startDate} ~ ${ex.endDate}`;
+      DOM.modalPrice.textContent = costInfo.label;
+      DOM.modalDescription.textContent = ex.description || '상세 요약 설명 정보가 없습니다.';
+      DOM.modalSource.textContent = `출처: ${ex.sourceName || '공공데이터포털'}`;
+      DOM.modalUpdated.textContent = `기준일: ${ex.lastUpdated || formatDateStr(todayDate)}`;
+
+      // Badges
+      DOM.modalBadges.innerHTML = '';
+      let badgeHtml = '';
+      if (ex.priceType === 'free') {
+        badgeHtml += '<span class="text-[8px] font-extrabold px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400">무료</span>';
+      } else if (ex.priceType === 'discount') {
+        badgeHtml += '<span class="text-[8px] font-extrabold px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-600 dark:bg-amber-950/20 dark:text-amber-400">할인</span>';
+      } else if (ex.priceType === 'paid') {
+        badgeHtml += '<span class="text-[8px] font-extrabold px-1.5 py-0.5 rounded-md bg-stone-150 text-stone-600 dark:bg-stone-850 dark:text-stone-400">유료</span>';
+      }
+      if (ex.isCultureDay) {
+        badgeHtml += '<span class="text-[8px] font-extrabold px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-600 dark:bg-blue-950/20 dark:text-blue-400">🎁 문화가있는날</span>';
+      }
+      badgeHtml += `<span class="text-[8px] font-extrabold px-1.5 py-0.5 rounded-md bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400">⏱️ 예상 소요: ${catDetails.duration}</span>`;
+      DOM.modalBadges.innerHTML = badgeHtml;
+
+      // Update Save button visual state
+      if (isSaved) {
+        DOM.modalBtnSave.className = "flex-[1.5] clay-button text-xs font-bold rounded-2xl py-3.5 select-none bg-rose-600 dark:bg-rose-700/80 border-rose-600";
+        DOM.modalBtnSave.textContent = "❤️ 저장 해제";
+      } else {
+        DOM.modalBtnSave.className = "flex-[1.5] clay-button text-xs font-bold rounded-2xl py-3.5 select-none bg-forest-800";
+        DOM.modalBtnSave.textContent = "💙 캘린더 담기";
+      }
+
+      DOM.detailsModal.classList.remove('pointer-events-none');
+      DOM.detailsModal.classList.add('opacity-100');
+      DOM.detailsContent.classList.remove('translate-y-full');
+    }
+
+    function closeExhibitionDetails() {
+      DOM.detailsModal.classList.add('pointer-events-none');
+      DOM.detailsModal.classList.remove('opacity-100');
+      DOM.detailsContent.classList.add('translate-y-full');
+      state.selectedExhibitionId = null;
+    }
+
+    function handleModalSaveAction() {
+      if (!state.selectedExhibitionId) return;
+      const ex = state.exhibitions.find(item => item.id === state.selectedExhibitionId);
+      if (!ex) return;
+
+      const isSaved = state.savedExhibitions.some(item => item.id === ex.id);
+      if (isSaved) {
+        removeExhibitionFromLocalStorage(ex.id);
+        DOM.modalBtnSave.className = "flex-[1.5] clay-button text-xs font-bold rounded-2xl py-3.5 select-none bg-forest-800";
+        DOM.modalBtnSave.textContent = "💙 캘린더 담기";
+      } else {
+        saveExhibitionToLocalStorage(ex);
+        DOM.modalBtnSave.className = "flex-[1.5] clay-button text-xs font-bold rounded-2xl py-3.5 select-none bg-rose-600 dark:bg-rose-700/80 border-rose-600";
+        DOM.modalBtnSave.textContent = "❤️ 저장 해제";
+      }
+    }
+
+    function handleModalViewSourceAction() {
+      if (!state.selectedExhibitionId) return;
+      const ex = state.exhibitions.find(item => item.id === state.selectedExhibitionId);
+      if (!ex) return;
+
+      if (ex.sourceUrl && ex.sourceUrl.trim() !== '') {
+        // Sandboxed view compatible redirection
+        window.location.href = ex.sourceUrl;
+      } else {
+        alert(`본 정보는 "${ex.sourceName || '공공 API 데이터'}" 기준입니다.\n미술관: ${ex.venue}\n주소: ${ex.address || '정보 없음'}\n상세 URL이 제공되지 않아 직접 검색 후 방문하시길 권장합니다.`);
+      }
+    }
+
+    // -------------------------------------------------------------
+    // Helper & Toast Notifications
+    // -------------------------------------------------------------
+    function showToast(msg) {
+      DOM.toastText.textContent = msg;
+      DOM.toast.classList.remove('opacity-0');
+      DOM.toast.classList.add('opacity-100', 'toast-anim');
+      
+      setTimeout(() => {
+        DOM.toast.classList.add('opacity-0');
+        DOM.toast.classList.remove('opacity-100', 'toast-anim');
+      }, 2000);
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function initTheme() {
+      const saved = localStorage.getItem('art_compass_theme') || 'light';
+      if (saved === 'dark') {
+        document.documentElement.classList.add('dark');
+        DOM.themeToggle.textContent = '🌙';
+      } else {
+        document.documentElement.classList.remove('dark');
+        DOM.themeToggle.textContent = '☀️';
+      }
+    }
+
+    function toggleTheme() {
+      const isDark = document.documentElement.classList.contains('dark');
+      if (isDark) {
+        document.documentElement.classList.remove('dark');
+        localStorage.setItem('art_compass_theme', 'light');
+        DOM.themeToggle.textContent = '☀️';
+        showToast('라이트 모드로 전환되었습니다.');
+      } else {
+        document.documentElement.classList.add('dark');
+        localStorage.setItem('art_compass_theme', 'dark');
+        DOM.themeToggle.textContent = '🌙';
+        showToast('다크 모드로 전환되었습니다.');
+      }
+      syncMapTileTheme();
+    }
+
+    // -------------------------------------------------------------
+    // Tab switching routines
+    // -------------------------------------------------------------
+    function switchTab(target) {
+      state.activeTab = target;
+      if (target === 'exhibitions') {
+        // Toggle tabs
+        DOM.tabExhibitionsSection.classList.remove('hidden');
+        DOM.tabCalendarSection.classList.add('hidden');
+        // Visual button styles
+        DOM.navExhibitions.className = 'flex flex-col items-center gap-1 text-emerald-700 dark:text-emerald-400 select-none transition-all';
+        DOM.navCalendar.className = 'flex flex-col items-center gap-1 text-stone-400 dark:text-stone-500 select-none relative transition-all';
+        setTimeout(() => {
+          if (maps.searchMap) maps.searchMap.invalidateSize();
+        }, 50);
+      } else {
+        DOM.tabExhibitionsSection.classList.add('hidden');
+        DOM.tabCalendarSection.classList.remove('hidden');
+        DOM.navExhibitions.className = 'flex flex-col items-center gap-1 text-stone-400 dark:text-stone-500 select-none transition-all';
+        DOM.navCalendar.className = 'flex flex-col items-center gap-1 text-emerald-700 dark:text-emerald-400 select-none relative transition-all';
+        renderCalendarTab();
+        setTimeout(() => {
+          if (maps.calendarMap) maps.calendarMap.invalidateSize();
+        }, 50);
+      }
+    }
+
+    // -------------------------------------------------------------
+    // Leaflet.js Maps Integration
+    // -------------------------------------------------------------
+    let maps = {
+      searchMap: null,
+      calendarMap: null,
+      searchMapMarkers: [],
+      calendarMapMarkers: [],
+      calendarMapLines: [],
+      searchTileLayer: null,
+      calendarTileLayer: null
+    };
+
+    let isMapFolded = false;
+
+    function getMapTileUrl() {
+      const isDark = document.documentElement.classList.contains('dark');
+      return isDark 
+        ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png' 
+        : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+    }
+
+    function initializeLeafletMaps() {
+      if (maps.searchMap || maps.calendarMap) return;
+
+      const tileUrl = getMapTileUrl();
+      const attrib = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
+
+      // 1. Search Map
+      maps.searchMap = L.map('leaflet-map', {
+        center: [37.5665, 126.9780],
+        zoom: 10,
+        zoomControl: true,
+        scrollWheelZoom: true
+      });
+      maps.searchTileLayer = L.tileLayer(tileUrl, { attribution: attrib }).addTo(maps.searchMap);
+
+      // 2. Calendar Routing Map
+      maps.calendarMap = L.map('calendar-map', {
+        center: [37.5665, 126.9780],
+        zoom: 11,
+        zoomControl: true,
+        scrollWheelZoom: true
+      });
+      maps.calendarTileLayer = L.tileLayer(tileUrl, { attribution: attrib }).addTo(maps.calendarMap);
+
+      // Make save function globally available for Leaflet popup callbacks
+      window.saveMapExhibitionToCalendar = (id) => {
+        const ex = state.exhibitions.find(item => item.id === id);
+        if (ex) {
+          saveExhibitionToLocalStorage(ex);
+          maps.searchMap.closePopup();
+        }
+      };
+    }
+
+    function updateExhibitionsMap() {
+      if (!maps.searchMap) return;
+
+      // Clear existing markers
+      maps.searchMapMarkers.forEach(m => m.remove());
+      maps.searchMapMarkers = [];
+
+      const list = state.filteredExhibitions || [];
+      document.getElementById('map-exhibition-count').textContent = `${list.length}개 표시중`;
+
+      if (list.length === 0) return;
+
+      list.forEach(ex => {
+        const coords = getExhibitionCoords(ex);
+        const marker = L.marker(coords);
+
+        const isAlreadySaved = state.savedExhibitions.some(s => s.id === ex.id);
+        const btnHtml = isAlreadySaved
+          ? `<span class="text-[9px] font-bold text-stone-400">❤️ 캘린더 담김</span>`
+          : `<button onclick="window.saveMapExhibitionToCalendar('${ex.id}')" class="px-2 py-1 rounded bg-forest-800 text-white text-[9px] font-bold shadow-sm select-none">💙 캘린더 담기</button>`;
+
+        const popupHtml = `
+          <div class="p-1 select-text text-[11px] space-y-1 font-sans">
+            <h4 class="font-extrabold text-forest-800 leading-snug">${ex.title}</h4>
+            <p class="text-[10px] text-stone-500">${ex.venue} (${ex.region} ${ex.district || ''})</p>
+            <p class="text-[10px] text-stone-400">${ex.startDate} ~ ${ex.endDate}</p>
+            <p class="text-[10px] font-bold text-emerald-600">${parseExhibitionCost(ex).label}</p>
+            <div class="pt-1.5 flex justify-end select-none">
+              ${btnHtml}
+            </div>
+          </div>
+        `;
+        marker.bindPopup(popupHtml);
+        marker.addTo(maps.searchMap);
+        maps.searchMapMarkers.push(marker);
+      });
+
+      // Fit bounds
+      if (maps.searchMapMarkers.length > 0) {
+        const group = new L.featureGroup(maps.searchMapMarkers);
+        maps.searchMap.fitBounds(group.getBounds().pad(0.15));
+      }
+    }
+
+    function updateCalendarMap() {
+      if (!maps.calendarMap) return;
+
+      // Clear markers and polylines
+      maps.calendarMapMarkers.forEach(m => m.remove());
+      maps.calendarMapMarkers = [];
+      maps.calendarMapLines.forEach(l => l.remove());
+      maps.calendarMapLines = [];
+
+      if (!state.calendarViewDate) {
+        return;
+      }
+
+      const dayList = state.savedExhibitions.filter(ex => 
+        ex.scheduledDates && ex.scheduledDates.includes(state.calendarViewDate)
+      );
+
+      const activeIcon = new L.Icon({
+        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-emerald.png',
+        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+        iconSize: [20, 32],
+        iconAnchor: [10, 32],
+        popupAnchor: [1, -26],
+        shadowSize: [32, 32]
+      });
+
+      const coordsList = [];
+
+      dayList.forEach((ex, index) => {
+        const coords = getExhibitionCoords(ex);
+        coordsList.push(coords);
+
+        const marker = L.marker(coords, { icon: activeIcon });
+        marker.bindPopup(`
+          <div class="p-1 text-[11px] font-sans font-medium select-text">
+            <span class="text-[9px] font-bold bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20 dark:text-emerald-400 px-1.5 py-0.5 rounded">${state.calendarViewDate} 방문 #${index + 1}</span>
+            <h4 class="font-extrabold text-forest-800 dark:text-stone-200 leading-snug mt-1">${ex.title}</h4>
+            <p class="text-[10px] text-stone-500 dark:text-stone-400 mt-0.5">🏛️ ${ex.venue}</p>
+          </div>
+        `);
+        marker.addTo(maps.calendarMap);
+        maps.calendarMapMarkers.push(marker);
+      });
+
+      if (coordsList.length > 1) {
+        const line = L.polyline(coordsList, { color: '#10b981', weight: 3, dashArray: '6, 6', opacity: 0.8 }).addTo(maps.calendarMap);
+        maps.calendarMapLines.push(line);
+      }
+
+      if (maps.calendarMapMarkers.length > 0) {
+        const group = new L.featureGroup(maps.calendarMapMarkers);
+        maps.calendarMap.fitBounds(group.getBounds().pad(0.2));
+      }
+    }
+
+    function syncMapTileTheme() {
+      const url = getMapTileUrl();
+      if (maps.searchTileLayer && maps.searchMap) {
+        maps.searchMap.removeLayer(maps.searchTileLayer);
+        maps.searchTileLayer = L.tileLayer(url, {
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+        }).addTo(maps.searchMap);
+      }
+      if (maps.calendarTileLayer && maps.calendarMap) {
+        maps.calendarMap.removeLayer(maps.calendarTileLayer);
+        maps.calendarTileLayer = L.tileLayer(url, {
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+        }).addTo(maps.calendarMap);
+      }
+    }
+
+    // -------------------------------------------------------------
+    // Initialization Coordinator
+    // -------------------------------------------------------------
+    async function initializeData() {
+      DOM.exhibitionsContainer.innerHTML = `
+        <div class="py-16 text-center space-y-2">
+          <div class="inline-block animate-spin text-2xl text-emerald-600">🔄</div>
+          <h3 class="text-sm font-bold text-stone-700 dark:text-stone-300">공공 API 데이터를 연동하는 중...</h3>
+          <p class="text-[10px] text-stone-400 dark:text-stone-500">잠시만 기다려 주시면 최신 문화정보를 표시합니다.</p>
+        </div>
+      `;
+
+      // Trigger background status test
+      testAndShowApiKeysStatus();
+
+      const rawList = await fetchFromApi();
+      state.exhibitions = rawList.map(ex => {
+        classifyExhibition(ex);
+        return ex;
+      });
+      updateStatusBannerDisplay();
+      renderGridMap();
+      initializeLeafletMaps();
+      applyFiltersAndRender();
+    }
+
+    function setupEventListeners() {
+      // Bottom tab clicks
+      DOM.navExhibitions.addEventListener('click', () => switchTab('exhibitions'));
+      DOM.navCalendar.addEventListener('click', () => switchTab('calendar'));
+
+      // Filter elements
+      DOM.searchInput.addEventListener('input', (e) => {
+        state.searchQuery = e.target.value;
+        applyFiltersAndRender();
+      });
+
+      DOM.sortSelect.addEventListener('change', (e) => {
+        state.sortBy = e.target.value;
+        applyFiltersAndRender();
+      });
+
+      DOM.btnViewCard.addEventListener('click', () => {
+        state.viewMode = 'card';
+        updateViewModeVisuals();
+        renderExhibitionCards();
+      });
+
+      DOM.btnViewList.addEventListener('click', () => {
+        state.viewMode = 'list';
+        updateViewModeVisuals();
+        renderExhibitionCards();
+      });
+
+      DOM.btnViewMapOpt.addEventListener('click', () => {
+        state.viewMode = 'map';
+        updateViewModeVisuals();
+        renderExhibitionCards();
+      });
+
+      DOM.btnResetRegion.addEventListener('click', () => {
+        state.selectedRegion = '전체';
+        updateRegionSelectionVisuals();
+        applyFiltersAndRender();
+      });
+
+      // Price filter buttons clicks
+      DOM.priceFilters.forEach(btn => {
+        btn.addEventListener('click', () => {
+          DOM.priceFilters.forEach(b => {
+            b.classList.remove('active', 'border-emerald-600', 'dark:border-emerald-500', 'text-emerald-600', 'dark:text-emerald-400', 'bg-emerald-50/40', 'dark:bg-emerald-950/20');
+            b.classList.add('border-stone-200', 'dark:border-stone-800', 'text-stone-400', 'dark:text-stone-500', 'bg-white', 'dark:bg-[#18201a]/40');
+          });
+          btn.classList.remove('border-stone-200', 'dark:border-stone-800', 'text-stone-400', 'dark:text-stone-500', 'bg-white', 'dark:bg-[#18201a]/40');
+          btn.classList.add('active', 'border-emerald-600', 'dark:border-emerald-500', 'text-emerald-600', 'dark:text-emerald-400', 'bg-emerald-50/40', 'dark:bg-emerald-950/20');
+          
+          state.priceFilter = btn.dataset.val;
+          applyFiltersAndRender();
+        });
+      });
+
+      // Date filter buttons clicks
+      DOM.dateFilters.forEach(btn => {
+        btn.addEventListener('click', () => {
+          DOM.dateFilters.forEach(b => {
+            b.classList.remove('active', 'border-emerald-600', 'dark:border-emerald-500', 'text-emerald-600', 'dark:text-emerald-400', 'bg-emerald-50/40', 'dark:bg-emerald-950/20');
+            b.classList.add('border-stone-200', 'dark:border-stone-800', 'text-stone-400', 'dark:text-stone-500', 'bg-white', 'dark:bg-[#18201a]/40');
+          });
+          btn.classList.remove('border-stone-200', 'dark:border-stone-800', 'text-stone-400', 'dark:text-stone-500', 'bg-white', 'dark:bg-[#18201a]/40');
+          btn.classList.add('active', 'border-emerald-600', 'dark:border-emerald-500', 'text-emerald-600', 'dark:text-emerald-400', 'bg-emerald-50/40', 'dark:bg-emerald-950/20');
+          
+          state.dateFilter = btn.dataset.val;
+          applyFiltersAndRender();
+        });
+      // Category filter buttons clicks
+      DOM.categoryFilters.forEach(btn => {
+        btn.addEventListener('click', () => {
+          DOM.categoryFilters.forEach(b => {
+            b.classList.remove('active', 'border-emerald-600', 'dark:border-emerald-500', 'text-emerald-600', 'dark:text-emerald-400', 'bg-emerald-50/40', 'dark:bg-emerald-950/20');
+            b.classList.add('border-stone-200', 'dark:border-stone-800', 'text-stone-400', 'dark:text-stone-500', 'bg-white', 'dark:bg-[#18201a]/40');
+          });
+          btn.classList.remove('border-stone-200', 'dark:border-stone-800', 'text-stone-400', 'dark:text-stone-500', 'bg-white', 'dark:bg-[#18201a]/40');
+          btn.classList.add('active', 'border-emerald-600', 'dark:border-emerald-500', 'text-emerald-600', 'dark:text-emerald-400', 'bg-emerald-50/40', 'dark:bg-emerald-950/20');
+          
+          state.categoryFilter = btn.dataset.val;
+
+          if (state.categoryFilter === '콘서트') {
+            DOM.concertSubfilterWrapper.classList.remove('hidden');
+          } else {
+            DOM.concertSubfilterWrapper.classList.add('hidden');
+          }
+
+          applyFiltersAndRender();
+        });
+      });
+
+      // Concert sub-filter buttons clicks
+      DOM.concertFilters.forEach(btn => {
+        btn.addEventListener('click', () => {
+          DOM.concertFilters.forEach(b => {
+            b.classList.remove('active', 'border-emerald-600', 'dark:border-emerald-500', 'text-emerald-600', 'dark:text-emerald-400', 'bg-emerald-50/40', 'dark:bg-emerald-950/20');
+            b.classList.add('border-stone-200', 'dark:border-stone-800', 'text-stone-400', 'dark:text-stone-500', 'bg-white', 'dark:bg-[#18201a]/40');
+          });
+          btn.classList.remove('border-stone-200', 'dark:border-stone-800', 'text-stone-400', 'dark:text-stone-500', 'bg-white', 'dark:bg-[#18201a]/40');
+          btn.classList.add('active', 'border-emerald-600', 'dark:border-emerald-500', 'text-emerald-600', 'dark:text-emerald-400', 'bg-emerald-50/40', 'dark:bg-emerald-950/20');
+          
+          state.concertArtistFilter = btn.dataset.val;
+          applyFiltersAndRender();
+        });
+      });
+
+      // Banner close
+      DOM.btnCloseBanner.addEventListener('click', () => {
+        DOM.noticeBanner.classList.add('hidden');
+      });
+
+      // Theme toggle click
+      DOM.themeToggle.addEventListener('click', toggleTheme);
+
+      // Settings modal toggles
+      DOM.btnOpenSettings.addEventListener('click', openSettings);
+      DOM.btnCloseSettings.addEventListener('click', closeSettings);
+      DOM.btnSaveSettings.addEventListener('click', saveSettings);
+      DOM.btnResetKeys.addEventListener('click', () => {
+        if (confirm('모든 설정값과 API 인증키를 삭제하시겠습니까?')) {
+          resetApiConfig();
+          closeSettings();
+          initializeData();
+        }
+      });
+
+      // Details Modal hooks
+      DOM.btnCloseDetails.addEventListener('click', closeExhibitionDetails);
+      DOM.modalBtnSave.addEventListener('click', handleModalSaveAction);
+      DOM.modalBtnSource.addEventListener('click', handleModalViewSourceAction);
+
+      // Map collapse toggle
+      const btnToggleMap = document.getElementById('btn-toggle-map');
+      const mapWrapper = document.getElementById('map-container-wrapper');
+      btnToggleMap.addEventListener('click', () => {
+        isMapFolded = !isMapFolded;
+        if (isMapFolded) {
+          mapWrapper.style.height = '0px';
+          btnToggleMap.textContent = '펼치기';
+        } else {
+          mapWrapper.style.height = '240px';
+          btnToggleMap.textContent = '접기';
+          setTimeout(() => {
+            if (maps.searchMap) maps.searchMap.invalidateSize();
+          }, 310);
+        }
+      });
+
+      // Calendar operations
+      DOM.btnClearCalendar.addEventListener('click', clearAllSaved);
+
+      // ESC key binds
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          closeSettings();
+          closeExhibitionDetails();
+        }
+      });
+    }
+
+    // App entrance
+    document.addEventListener('DOMContentLoaded', () => {
+      initTheme();
+      loadApiConfig();
+      loadSavedExhibitions();
+      setupEventListeners();
+      initializeData();
+    });
+  </script>
 </body>
 </html>

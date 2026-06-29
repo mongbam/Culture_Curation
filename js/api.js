@@ -1,7 +1,46 @@
 /**
  * api.js - Handles direct public API requests, XML/JSON parsing, normalization, and fallback triggers
- * Supports Tour API (KTO) and Culture API (KCISA) endpoints with multiple service keys.
+ * Supports KCISA, Seoul Open Data, and KOPIS API endpoints.
  */
+
+/**
+ * Clean API keys by resolving any URL double-encoding issues recursively.
+ * @param {string} key 
+ * @returns {string} Raw cleaned key
+ */
+function cleanApiKey(key) {
+  if (!key) return '';
+  let decoded = key.trim();
+  let prev;
+  try {
+    do {
+      prev = decoded;
+      decoded = decodeURIComponent(decoded);
+    } while (decoded !== prev);
+  } catch (e) {}
+  return decoded;
+}
+
+/**
+ * Wrap a target URL with the selected CORS proxy
+ * @param {string} url 
+ * @param {string} proxyType 
+ * @returns {string} Wrapped URL
+ */
+function wrapWithProxy(url, proxyType) {
+  if (!proxyType || proxyType === 'none') {
+    return url;
+  }
+  const encodedUrl = encodeURIComponent(url);
+  if (proxyType === 'corsproxy') {
+    return `https://corsproxy.io/?${url}`;
+  } else if (proxyType === 'allorigins') {
+    return `https://api.allorigins.win/raw?url=${encodedUrl}`;
+  } else if (proxyType === 'thingproxy') {
+    return `https://thingproxy.freeboard.io/fetch/${url}`;
+  }
+  return url;
+}
 
 /**
  * Resolves current API configuration from either js/config.js (window.CultureCurationConfig) or localStorage
@@ -10,40 +49,56 @@
 function getApiConfig() {
   const fileConfig = window.CultureCurationConfig || {};
   
-  const tourKey = fileConfig.tourApiKey || localStorage.getItem('culture_curator_tour_api_key') || '';
-  const cultureKey = fileConfig.cultureApiKey || localStorage.getItem('culture_curator_culture_api_key') || '';
-  const endpointType = localStorage.getItem('culture_curator_endpoint_type') || fileConfig.defaultEndpointType || 'tour';
+  const kcisaKey = fileConfig.kcisaApiKey || localStorage.getItem('culture_curator_kcisa_key') || '';
+  const seoulKey = fileConfig.seoulApiKey || localStorage.getItem('culture_curator_seoul_key') || '';
+  const kopisKey = fileConfig.kopisApiKey || localStorage.getItem('culture_curator_kopis_key') || '';
+  
+  const endpointType = localStorage.getItem('culture_curator_endpoint_type') || fileConfig.defaultEndpointType || 'korea';
+  const proxyServer = localStorage.getItem('culture_curator_proxy_server') || fileConfig.defaultProxyServer || 'corsproxy';
   
   return {
-    tourKey: tourKey.trim(),
-    cultureKey: cultureKey.trim(),
+    kcisaKey: cleanApiKey(kcisaKey),
+    seoulKey: cleanApiKey(seoulKey),
+    kopisKey: cleanApiKey(kopisKey),
     endpointType: endpointType,
-    isTourKeyFromFile: !!fileConfig.tourApiKey,
-    isCultureKeyFromFile: !!fileConfig.cultureApiKey,
+    proxyServer: proxyServer,
+    isKcisaKeyFromFile: !!fileConfig.kcisaApiKey,
+    isSeoulKeyFromFile: !!fileConfig.seoulApiKey,
+    isKopisKeyFromFile: !!fileConfig.kopisApiKey,
     debug: fileConfig.debug || false
   };
 }
 
 /**
  * Save configuration overrides to localStorage
- * @param {Object} config - { tourKey, cultureKey, endpointType }
+ * @param {Object} config - { kcisaKey, seoulKey, kopisKey, endpointType, proxyServer }
  */
-function saveApiConfig({ tourKey, cultureKey, endpointType }) {
-  if (tourKey !== undefined) localStorage.setItem('culture_curator_tour_api_key', tourKey.trim());
-  if (cultureKey !== undefined) localStorage.setItem('culture_curator_culture_api_key', cultureKey.trim());
+function saveApiConfig({ kcisaKey, seoulKey, kopisKey, endpointType, proxyServer }) {
+  if (kcisaKey !== undefined) localStorage.setItem('culture_curator_kcisa_key', cleanApiKey(kcisaKey));
+  if (seoulKey !== undefined) localStorage.setItem('culture_curator_seoul_key', cleanApiKey(seoulKey));
+  if (kopisKey !== undefined) localStorage.setItem('culture_curator_kopis_key', cleanApiKey(kopisKey));
   if (endpointType !== undefined) localStorage.setItem('culture_curator_endpoint_type', endpointType);
+  if (proxyServer !== undefined) localStorage.setItem('culture_curator_proxy_server', proxyServer);
 }
 
 /**
  * Fetch exhibitions from the configured public portal or fallback JSON
- * @param {Object} params - Query params (region, isCultureDay, priceType, etc.)
+ * @param {Object} params - Query params
  * @returns {Promise<Array>} List of normalized exhibition data
  */
 async function fetchExhibitions(params = {}) {
   const config = getApiConfig();
-  const currentKey = config.endpointType === 'culture' ? config.cultureKey : config.tourKey;
+  let currentKey = '';
   
-  if (!currentKey) {
+  if (config.endpointType === 'korea') {
+    currentKey = config.kcisaKey;
+  } else if (config.endpointType === 'seoul') {
+    currentKey = config.seoulKey;
+  } else if (config.endpointType === 'kopis') {
+    currentKey = config.kopisKey;
+  }
+  
+  if (!currentKey && config.endpointType !== 'none') {
     console.warn(`No Service Key provided for endpoint [${config.endpointType}]. Loading fallback mock data.`);
     window.apiDataSource = 'fallback';
     return await getFallbackExhibitions();
@@ -51,53 +106,60 @@ async function fetchExhibitions(params = {}) {
 
   try {
     let targetUrl = '';
-    const todayYmd = new Date().toISOString().split('T')[0].replace(/-/g, '');
+    const today = new Date();
+    const fromDate = new Date(today.getFullYear(), today.getMonth(), 1); // Start of current month
+    const toDate = new Date(today.getFullYear(), today.getMonth() + 1, 0); // End of current month
+    
+    const fromYmd = fromDate.toISOString().split('T')[0].replace(/-/g, '');
+    const toYmd = toDate.toISOString().split('T')[0].replace(/-/g, '');
 
-    if (config.endpointType === 'culture') {
-      // KCISA (Culture Portal) Public API
-      const serviceUrl = 'https://api.kcisa.or.kr/openapi/service/rest/meta4/getMCST04001';
-      const urlParams = new URLSearchParams({
-        serviceKey: currentKey,
-        numOfRows: '50',
-        pageNo: '1',
-        keyword: params.keyword || ''
-      });
-      targetUrl = `${serviceUrl}?${urlParams.toString()}`;
-    } else {
-      // KTO (Korea Tourism Organization) searchFestival API
-      const serviceUrl = 'https://apis.data.go.kr/B551011/KorService1/searchFestival1';
-      const urlParams = new URLSearchParams({
-        serviceKey: currentKey,
-        numOfRows: '50',
-        pageNo: '1',
-        MobileOS: 'ETC',
-        MobileApp: 'CultureScheduler',
-        _type: 'json',
-        arrange: 'A',
-        listYN: 'Y',
-        eventStartDate: todayYmd
-      });
-      targetUrl = `${serviceUrl}?${urlParams.toString()}`;
+    if (config.endpointType === 'korea') {
+      // KCISA (Culture Portal) Public API - period2
+      // Using literal key parameter to avoid double encoding issue on public API gateways
+      targetUrl = `https://apis.data.go.kr/B553457/cultureinfo/period2?serviceKey=${currentKey}&from=${fromYmd}&to=${toYmd}&pageNo=1&numOfRows=50&cpage=1&rows=50`;
+    } else if (config.endpointType === 'seoul') {
+      // Seoul Open Data culturalEventInfo JSON
+      targetUrl = `https://openapi.seoul.go.kr:443/${currentKey}/json/culturalEventInfo/1/50/`;
+    } else if (config.endpointType === 'kopis') {
+      // KOPIS XML API
+      targetUrl = `https://www.kopis.or.kr/openApi/restful/pblprfr?service=${currentKey}&stdate=${fromYmd}&eddate=${toYmd}&cpage=1&rows=50`;
     }
 
     if (config.debug) {
       console.log(`[API Debug] Request URL: ${targetUrl}`);
     }
+
+    const wrappedUrl = wrapWithProxy(targetUrl, config.proxyServer);
     
-    const response = await fetch(targetUrl);
+    if (config.debug) {
+      console.log(`[API Debug] Wrapped Proxy URL: ${wrappedUrl}`);
+    }
+
+    const response = await fetch(wrappedUrl);
     if (!response.ok) {
       throw new Error(`API HTTP Error: ${response.status}`);
     }
 
-    const text = await response.text();
+    let text = await response.text();
+    
+    // Parse proxy wrapper if any (e.g. AllOrigins wraps XML/JSON in contents string)
+    if (text.trim().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed.contents) {
+          text = parsed.contents;
+        }
+      } catch (e) {}
+    }
+
     let normalized = [];
 
-    // Parse XML or JSON
+    // Parse XML or JSON based on content
     if (text.trim().startsWith('<')) {
-      normalized = parseXmlExhibitions(text);
+      normalized = parseXmlExhibitions(text, config.endpointType);
     } else {
       const data = JSON.parse(text);
-      normalized = parseJsonExhibitions(data);
+      normalized = parseJsonExhibitions(data, config.endpointType);
     }
 
     if (normalized && normalized.length > 0) {
@@ -160,6 +222,58 @@ async function getFallbackExhibitions() {
       }
     ];
   }
+}
+
+/**
+ * Fetch detailed performance info from KOPIS XML API
+ * @param {string} id - KOPIS performance ID
+ * @param {string} kopisKey - Cleaned KOPIS API Key
+ * @param {string} proxyServer - Proxy server type
+ * @returns {Promise<Object>} Object with detailed fields
+ */
+async function fetchKopisDetails(id, kopisKey, proxyServer) {
+  const cleanId = id.replace(/^kopis-/, '');
+  const url = `https://www.kopis.or.kr/openApi/restful/pblprfr/${cleanId}?service=${kopisKey}`;
+  const wrappedUrl = wrapWithProxy(url, proxyServer);
+  
+  const response = await fetch(wrappedUrl);
+  if (!response.ok) {
+    throw new Error(`KOPIS Detail HTTP error! status: ${response.status}`);
+  }
+  let text = await response.text();
+  
+  if (text.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed.contents) text = parsed.contents;
+    } catch(e) {}
+  }
+  
+  const parser = new DOMParser();
+  const xmlDoc = parser.parseFromString(text, 'text/xml');
+  const dbNode = xmlDoc.getElementsByTagName('db')[0];
+  if (!dbNode) {
+    throw new Error('No db tag in KOPIS details response');
+  }
+  
+  const getVal = (tagName, def = '') => {
+    const node = dbNode.getElementsByTagName(tagName)[0];
+    return node ? node.textContent || def : def;
+  };
+  
+  const priceText = getVal('pcseguidance') || '유료 (상세내용 확인)';
+  const priceType = determinePriceType(priceText);
+  const address = getVal('adres') || getVal('fcltynm') || '';
+  const description = getVal('sty') || '공연 상세 설명 정보는 공식 예매처 혹은 사이트 정보를 참조하세요.';
+  const relateUrl = getVal('relateurl') || getVal('relate') || '';
+  
+  return {
+    priceText,
+    priceType,
+    address,
+    description,
+    sourceUrl: relateUrl
+  };
 }
 
 /**
@@ -236,57 +350,100 @@ function determinePriceType(chargeText) {
 /**
  * Parse XML string response into normalized JSON list
  * @param {string} xmlText 
+ * @param {string} endpointType 
  * @returns {Array}
  */
-function parseXmlExhibitions(xmlText) {
+function parseXmlExhibitions(xmlText, endpointType) {
   const parser = new DOMParser();
   const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
-  const items = xmlDoc.getElementsByTagName('item');
   const list = [];
 
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    const getVal = (tagName, def = '') => {
-      const node = item.getElementsByTagName(tagName)[0];
-      return node ? node.textContent || def : def;
-    };
+  if (endpointType === 'kopis') {
+    const items = xmlDoc.getElementsByTagName('db');
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const getVal = (tagName, def = '') => {
+        const node = item.getElementsByTagName(tagName)[0];
+        return node ? node.textContent || def : def;
+      };
 
-    const title = getVal('title') || getVal('eventTitle');
-    const venue = getVal('eventPlace') || getVal('place') || '공공 문화시설';
-    const address = getVal('addr1') || getVal('address') || '';
-    const { region, district } = parseAddress(address);
-    
-    const startDate = formatToYmd(getVal('eventStartDate') || getVal('startDate'));
-    const endDate = formatToYmd(getVal('eventEndDate') || getVal('endDate'));
-    
-    const priceText = getVal('charge') || getVal('useFee') || '무료';
-    const priceType = determinePriceType(priceText);
-    
-    const lat = parseFloat(getVal('mapy') || getVal('lat')) || null;
-    const lng = parseFloat(getVal('mapx') || getVal('lng')) || null;
-    
-    const isCultureDay = priceText.includes('문화가 있는 날') || title.includes('문화가 있는 날');
+      const id = `kopis-${getVal('mt20id')}`;
+      const title = getVal('prfnm');
+      const venue = getVal('fcltynm') || '문화공연장';
+      const startDate = formatToYmd(getVal('prfpdfrom'));
+      const endDate = formatToYmd(getVal('prfpdto'));
+      const area = getVal('area') || '서울';
+      
+      const { region, district } = parseAddress(area + ' ' + venue);
 
-    list.push({
-      id: `api-xml-${i}-${Date.now()}`,
-      title,
-      venue,
-      region,
-      district,
-      startDate,
-      endDate,
-      priceType,
-      priceText,
-      category: '미술',
-      description: getVal('subTitle') || getVal('overview') || '상세 설명 정보는 출처 페이지를 참고하세요.',
-      address,
-      lat,
-      lng,
-      sourceName: '공공데이터포털',
-      sourceUrl: getVal('url') || '',
-      isCultureDay,
-      lastUpdated: new Date().toISOString().split('T')[0]
-    });
+      list.push({
+        id,
+        title,
+        venue,
+        region,
+        district,
+        startDate,
+        endDate,
+        priceType: 'paid', // Default for KOPIS list, resolved on detail fetch
+        priceText: '상세 정보 확인 필요',
+        category: getVal('genr') || '공연',
+        description: '상세 보기 클릭 시 실시간 공연 상세 데이터를 조회합니다.',
+        address: venue,
+        lat: null,
+        lng: null,
+        sourceName: '예술경영지원센터 KOPIS',
+        sourceUrl: '',
+        isCultureDay: title.includes('문화가 있는 날'),
+        lastUpdated: new Date().toISOString().split('T')[0]
+      });
+    }
+  } else {
+    // KCISA XML parsing
+    const items = xmlDoc.getElementsByTagName('item');
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const getVal = (tagName, def = '') => {
+        const node = item.getElementsByTagName(tagName)[0];
+        return node ? node.textContent || def : def;
+      };
+
+      const title = getVal('title') || getVal('eventTitle');
+      const venue = getVal('place') || getVal('eventPlace') || '공공 문화시설';
+      const address = getVal('address') || getVal('addr1') || '';
+      const { region, district } = parseAddress(address || venue);
+      
+      const startDate = formatToYmd(getVal('startDate') || getVal('eventStartDate'));
+      const endDate = formatToYmd(getVal('endDate') || getVal('eventEndDate'));
+      
+      const priceText = getVal('price') || getVal('fee') || getVal('charge') || getVal('useFee') || '무료';
+      const priceType = determinePriceType(priceText);
+      
+      const lat = parseFloat(getVal('gpsY') || getVal('gps_y') || getVal('mapy')) || null;
+      const lng = parseFloat(getVal('gpsX') || getVal('gps_x') || getVal('mapx')) || null;
+      
+      const isCultureDay = priceText.includes('문화가 있는 날') || title.includes('문화가 있는 날');
+
+      list.push({
+        id: `kcisa-${i}-${Date.now()}`,
+        title,
+        venue,
+        region,
+        district,
+        startDate,
+        endDate,
+        priceType,
+        priceText,
+        category: getVal('realmName') || '전시/미술',
+        description: getVal('subTitle') || getVal('overview') || '상세 설명 정보는 출처 페이지를 참고하세요.',
+        address,
+        lat,
+        lng,
+        sourceName: '한국문화정보원',
+        sourceUrl: getVal('url') || '',
+        isCultureDay,
+        lastUpdated: new Date().toISOString().split('T')[0]
+      });
+    }
   }
   return list;
 }
@@ -294,56 +451,103 @@ function parseXmlExhibitions(xmlText) {
 /**
  * Parse JSON object response into normalized list
  * @param {Object} data 
+ * @param {string} endpointType 
  * @returns {Array}
  */
-function parseJsonExhibitions(data) {
+function parseJsonExhibitions(data, endpointType) {
   let rawItems = [];
   
-  if (data.response && data.response.body && data.response.body.items) {
-    const itemsObj = data.response.body.items;
-    rawItems = Array.isArray(itemsObj.item) ? itemsObj.item : (itemsObj.item ? [itemsObj.item] : []);
-  } else if (Array.isArray(data)) {
-    rawItems = data;
+  if (endpointType === 'seoul') {
+    if (data.culturalEventInfo && Array.isArray(data.culturalEventInfo.row)) {
+      rawItems = data.culturalEventInfo.row;
+    }
+    
+    return rawItems.map((item, index) => {
+      const title = item.TITLE || '서울시 문화행사';
+      const venue = item.PLACE || item.ORG_NAME || '서울 공공시설';
+      const address = item.PLACE || '';
+      const district = item.GUNAME || '';
+      
+      const startDate = formatToYmd(item.STRTDATE);
+      const endDate = formatToYmd(item.END_DATE);
+      
+      const priceText = item.USE_FEE || '무료';
+      const priceType = determinePriceType(priceText);
+      
+      const lat = item.LAT ? parseFloat(item.LAT) : null;
+      const lng = item.LOT ? parseFloat(item.LOT) : null;
+      
+      const isCultureDay = priceText.includes('문화가 있는 날') || title.includes('문화가 있는 날');
+
+      return {
+        id: `seoul-${index}-${Date.now()}`,
+        title,
+        venue,
+        region: '서울',
+        district,
+        startDate,
+        endDate,
+        priceType,
+        priceText,
+        category: item.CODENAME || '전시/미술',
+        description: item.PROGRAM || item.ETC_DESC || '상세 정보는 서울시 문화행사 홈페이지를 참조하십시오.',
+        address,
+        lat,
+        lng,
+        sourceName: '서울시 열린데이터광장',
+        sourceUrl: item.ORG_LINK || item.HMPG_ADDR || '',
+        isCultureDay,
+        lastUpdated: new Date().toISOString().split('T')[0]
+      };
+    });
+  } else {
+    // KCISA JSON parsing fallback
+    if (data.response && data.response.body && data.response.body.items) {
+      const itemsObj = data.response.body.items;
+      rawItems = Array.isArray(itemsObj.item) ? itemsObj.item : (itemsObj.item ? [itemsObj.item] : []);
+    } else if (Array.isArray(data)) {
+      rawItems = data;
+    }
+
+    return rawItems.map((item, index) => {
+      const title = item.title || item.eventTitle || '전시 정보';
+      const venue = item.place || item.eventPlace || '공공 문화시설';
+      const address = item.address || item.addr1 || '';
+      const { region, district } = parseAddress(address || venue);
+      
+      const startDate = formatToYmd(item.startDate || item.eventStartDate);
+      const endDate = formatToYmd(item.endDate || item.eventEndDate);
+      
+      const priceText = item.price || item.fee || item.charge || item.useFee || '무료';
+      const priceType = determinePriceType(priceText);
+      
+      const lat = item.gpsY ? parseFloat(item.gpsY) : (item.mapy ? parseFloat(item.mapy) : null);
+      const lng = item.gpsX ? parseFloat(item.gpsX) : (item.mapx ? parseFloat(item.mapx) : null);
+      
+      const isCultureDay = priceText.includes('문화가 있는 날') || title.includes('문화가 있는 날');
+
+      return {
+        id: item.contentid ? `kcisa-${item.contentid}` : `kcisa-${index}-${Date.now()}`,
+        title,
+        venue,
+        region,
+        district,
+        startDate,
+        endDate,
+        priceType,
+        priceText,
+        category: item.realmName || '전시/미술',
+        description: item.subTitle || item.overview || '상세 설명 정보는 출처 페이지를 참고하세요.',
+        address,
+        lat,
+        lng,
+        sourceName: '한국문화정보원',
+        sourceUrl: item.url || '',
+        isCultureDay,
+        lastUpdated: new Date().toISOString().split('T')[0]
+      };
+    });
   }
-
-  return rawItems.map((item, index) => {
-    const title = item.title || item.eventTitle || '전시 정보';
-    const venue = item.eventPlace || item.place || '공공 문화시설';
-    const address = item.addr1 || item.address || '';
-    const { region, district } = parseAddress(address);
-    
-    const startDate = formatToYmd(item.eventStartDate || item.startDate);
-    const endDate = formatToYmd(item.eventEndDate || item.endDate);
-    
-    const priceText = item.charge || item.useFee || '무료';
-    const priceType = determinePriceType(priceText);
-    
-    const lat = item.mapy ? parseFloat(item.mapy) : (item.lat ? parseFloat(item.lat) : null);
-    const lng = item.mapx ? parseFloat(item.mapx) : (item.lng ? parseFloat(item.lng) : null);
-    
-    const isCultureDay = priceText.includes('문화가 있는 날') || title.includes('문화가 있는 날');
-
-    return {
-      id: item.contentid ? `api-json-${item.contentid}` : `api-json-${index}-${Date.now()}`,
-      title,
-      venue,
-      region,
-      district,
-      startDate,
-      endDate,
-      priceType,
-      priceText,
-      category: '미술',
-      description: item.subTitle || item.overview || '상세 설명 정보는 출처 페이지를 참고하세요.',
-      address,
-      lat,
-      lng,
-      sourceName: '공공데이터포털',
-      sourceUrl: item.url || '',
-      isCultureDay,
-      lastUpdated: new Date().toISOString().split('T')[0]
-    };
-  });
 }
 
 // Track state of current data source
@@ -355,5 +559,6 @@ window.ApiModule = {
   saveApiConfig,
   fetchExhibitions,
   fetchCultureDayEvents,
-  getFallbackExhibitions
+  getFallbackExhibitions,
+  fetchKopisDetails
 };
